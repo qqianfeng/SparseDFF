@@ -11,7 +11,7 @@ from refinement.model import LinearProbe, LinearProbe_Thick, LinearProbe_Juicy, 
 
 def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True,
                                   key=0, name='bear', device='cuda', scale=6,
-                                   method='binearest-match', dis_threshold=0.1, 
+                                   method='binearest-match', dis_threshold=0.1,
                                    quotient_threshold=0.8, verbose=False, model_path=None,
                                    p0 = 'pyhsics', p1= 'pyhsics'):
     if key == 0:
@@ -26,6 +26,7 @@ def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True
     elif method == 'binearest_match':
         points_select, index_select= find_match_3D(points, batch_sign, img_num, dis_threshold=dis_threshold)
     elif method == 'vote_3D':
+        #  down-sample a point cloud based on a voting mechanism
         points_select, index_select = vote_3D(points, batch_sign, img_num, dis_threshold=dis_threshold, selected_num=int(points.shape[0] * 0.8))
     elif method == 'raw':
         points_select, index_select = points, torch.arange(points.shape[0]).to(device)
@@ -40,7 +41,7 @@ def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True
         model.load_state_dict(torch.load(model_path))
         model.eval()
         features_select = model(features_select).detach()
-    
+
     np.save(f'./data/points_{key}.npy', points_select.cpu().numpy())
     np.save(f'./data/colors_{key}.npy', colors_select)
     np.save(f'./data/features_{key}.npy', features_select.cpu().numpy())
@@ -50,4 +51,4 @@ def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True
         print(f'The whole number of points of object{key}: {points_select.shape[0]}')
 
     return points_select, features_select, colors_select, points.cpu().numpy(), colors, points_ref
-    
+

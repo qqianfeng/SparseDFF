@@ -9,7 +9,7 @@ import torch
 import open3d as o3d
 import yaml
 import json
-from scipy.spatial.transform import Rotation 
+from scipy.spatial.transform import Rotation
 import os
 import skimage
 
@@ -65,9 +65,9 @@ def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=
     The batch_K_version  of depth2pt, but without the auto-scale of the camera parameters.
     So K MUST MATCH the depths.
 
-    If xyz_images is True: 
+    If xyz_images is True:
         Translate a pile of depth images ( N x H x W) to xyz images ( N x H x W x 3)
-    Else: 
+    Else:
         Translate a pile of depth images ( N x H x W) to 3D points ( Num x 3) filtered by the depth < 0
         bath_sign (Num, ) is the Sign of the batch, noting every selected points which batch it belongs to
         zero_filter (Num, ) is the filter of the points which depth > 0
@@ -78,9 +78,9 @@ def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=
         R (np.ndarray): the rotation matrix (n, 4, 4)
 
     Returns:
-        If xyz_images is True: 
+        If xyz_images is True:
             xyz_imges: np.ndarray (n, h, w, 3)
-        Else: 
+        Else:
             points: np.ndarray (num, 3)
             batch_sign: np.ndarray (num, )
             zero_filter: np.ndarray (n*h*w, )
@@ -161,7 +161,7 @@ def read_tranformation(data_path:str='./camera/transform.yaml'):
 
 
 def get_extrinsics_from_json(path:str, transformation_path:str='./camera/transform.yaml'):
-    """return the extrinsics of the four cameras 
+    """return the extrinsics of the four cameras
         world2cam0, world2cam1, world2cam2, world2cam3
 
     Args:
@@ -240,7 +240,7 @@ def undistort(colors:np.ndarray, depths:np.ndarray, intrinsics:np.ndarray, disto
 
     colors_undistort = np.stack(color_undistort_ls, axis=0)
     depths_undistort = np.stack(depth_undistort_ls, axis=0)
-    
+
     return colors_undistort, depths_undistort
 
 def get_distort_points(path:str, extrinsics:np.ndarray)->(np.ndarray, np.ndarray):
@@ -286,7 +286,7 @@ def line_dist(points:torch.tensor, line:torch.tensor)->torch.tensor:
 def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, name = 'mm', prune_method='sam', key:int=0, verbose:bool=True, samckp_path:str='./thirdparty_module/sam_vit_h_4b8939.pth')->(np.ndarray, np.ndarray, np.ndarray):
     """
     the pipeline of the data loading/capturing then processing
-    
+
     The depths has shrinked according to the scale.
 
     Args:
@@ -297,7 +297,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
         downsample_size (tuple): the down_sampled size of each image
         scale: the shrink scale
     Returns:
-        points: (n, 3) torch.Tensor 
+        points: (n, 3) torch.Tensor
         features: (n, F) torch.Tensor
         colors: (n, 3) np.ndarray
         batch_sign: (n, ) torch.Tensor
@@ -308,8 +308,9 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
     ### get extrinsics(world2cam) and world2base
     extrinsics, world2base = get_extrinsics_from_json(extrinsics_path)
     if data_path:
+        # load images
         colors_distort, depths_distort, distortion, intrinsics = load_cddi(data_path)
-        colors, depths = undistort(colors_distort, depths_distort ,intrinsics, distortion) 
+        colors, depths = undistort(colors_distort, depths_distort ,intrinsics, distortion)
     else:
         from .capture_3d import capture_auto
         points_distort, colors_distort, depths_distort, intrinsics, distortion = capture_auto(save=save, name = name)
@@ -335,13 +336,13 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             posi_select_id = np.random.choice(len(posi_index[0]), posi_num // 2)
             posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[5, 20])
             posi_select_id_ = np.random.choice(len(posi_index_[0]), posi_num // 2)
-            
-            
+
+
             posi_select_id = np.concatenate([posi_select_id, posi_select_id_])
             posi_index = np.array([[posi_index[1][i], posi_index[0][i]] for i in posi_select_id])
-            
 
-            neg_num = 2 
+
+            neg_num = 2
             if key == 0:
                 neg_index = get_index_from_range(points, x=[-400, 400], y = [370, 460], z=[-10, 20])
                 if neg_index[0].shape[0] < neg_num:
@@ -362,7 +363,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             mask_sam = detector.get_mask(colors, ref_points, labels)
             if save:
                 vis_mask_image(colors, mask_sam, ref_points, labels, save_path=f'./data/sam{idx}.png')
-            
+
             mask_physics = get_index_from_range(points, return_mask=True)
             mask = mask_sam & mask_physics
             index = np.nonzero(mask)
@@ -374,13 +375,13 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
                 vis_mask_image(colors, mask, None, None, save_path=f'./data/physics{idx}.png')
         else:
             raise NotImplementedError
-        
+
         bb = np.array([np.min(index[1]) , np.min(index[0]) , np.max(index[1]) , np.max(index[0]) ])
         pruned_colors = colors[bb[1]:bb[3], bb[0]:bb[2]]
         prune_points = points[bb[1]:bb[3], bb[0]:bb[2]]
         pruned_mask = mask[bb[1]:bb[3], bb[0]:bb[2]].astype('float32')
         pruned_depth = depth[bb[1]:bb[3], bb[0]:bb[2]]
-        
+
         h, w, _ = pruned_colors.shape
         h, w = h // scale, w // scale
 
@@ -401,7 +402,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
         masked_points = downsampled_points[downsampled_mask]
         masked_colors = downsampled_colors[downsampled_mask]
         batch_sign = np.ones((masked_points.shape[0],)) * (idx + 1)
-        
+
         if prune_method == 'physics':
             ### to prune the table top off
             pcd = o3d.geometry.PointCloud()

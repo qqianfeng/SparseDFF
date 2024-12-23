@@ -1,9 +1,9 @@
 # SparseDFF: Sparse-View Feature Distillation for One-Shot Dexterous Manipulation
-We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RGBD observations, enabling one-shot learning of dexterous manipulations that are transferable to novel scenes. 
+We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RGBD observations, enabling one-shot learning of dexterous manipulations that are transferable to novel scenes.
 
 ***[ICLR 2024](https://iclr.cc/) Accepted***
 
- [Project](https://helloqxwang.github.io/SparseDFF/) | [Full Paper](https://arxiv.org/abs/2310.16838) 
+ [Project](https://helloqxwang.github.io/SparseDFF/) | [Full Paper](https://arxiv.org/abs/2310.16838)
 
 [![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fhelloqxwang%2FSparseDFF&count_bg=%23F3A7D2&title_bg=%23F96E28&icon=microbit.svg&icon_color=%2325A837&title=Hi%21&edge_flat=false)](https://hits.seeyoufarm.com)
 
@@ -24,13 +24,13 @@ We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RG
 <img src="./images/constructDFF.png" alt="constructDFF" />
 Initially, we map the image features to the 3D point cloud, allowing for propagation across the 3D space to establish a dense feature field.
 
-Then, A lightweight feature refinement network optimizes with a contrastive loss between pairwise views after back-projecting the image features onto the 3D point cloud. 
+Then, A lightweight feature refinement network optimizes with a contrastive loss between pairwise views after back-projecting the image features onto the 3D point cloud.
 
-Additionally, we implement a point-pruning mechanism to augment feature continuity within each local neighborhood. 
+Additionally, we implement a point-pruning mechanism to augment feature continuity within each local neighborhood.
 
 ### Optimize the EE Pose
 <img src="./images/method_hand_optim.jpg" alt="method_hand_optim" />
-By establishing coherent feature fields on both source and target scenes, we devise an energy function that facilitates the minimization of feature discrepancies w.r.t. the end-effector parameters between the demonstration and the target manipulation. 
+By establishing coherent feature fields on both source and target scenes, we devise an energy function that facilitates the minimization of feature discrepancies w.r.t. the end-effector parameters between the demonstration and the target manipulation.
 
 
 
@@ -68,7 +68,7 @@ bash download.sh
 
 ## Camera Installation
 
->  If you simply wish to run our model (including both training and inference) on pre-captured data, there's no need for the following installation steps. Go ahead and start playing with SparseDFF directly! 
+>  If you simply wish to run our model (including both training and inference) on pre-captured data, there's no need for the following installation steps. Go ahead and start playing with SparseDFF directly!
 >
 > However, if you intend to collect your own data using Azure Kinect, please proceed with the following setup.
 
@@ -167,14 +167,14 @@ With these steps, you can either quickly test our model with provided materials 
 
 We provide the `vis_features.py` script in order to perform further fine-grained visualization on the data in the  `./data `directory.
 
-All the Visualizations will be saved in `./visulize` directory. 
+All the Visualizations will be saved in `./visulize` directory.
 
-Visualize the feature field using the similarity between 
+Visualize the feature field using the similarity between
 ```
 python vis_features.py --mode 3Dsim_volume --key 0
 ```
 
-Visualize the optimization Result 
+Visualize the optimization Result
 ```
 python vis_features.py --mode result_vis --key=1 --pca --with_hand
 ```
@@ -184,3 +184,13 @@ Visualize the feature similarity between all points in reference pointcloud, tes
 ```
 python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 ```
+
+
+# Adapt Biglab Setup
+## todos
+1. './camera/workspace/calibration.json'
+2. import 4 images/depth
+3. do we need to retrain the alignment network?
+4. convert hithand urdf to mjcf from
+https://docs.kscale.dev/utils/urdf2mjcf
+5. import collected grasp pose

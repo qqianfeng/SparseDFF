@@ -159,7 +159,17 @@ class Hand_AlignmentCheck:
 
     ###### can sample some pt from the reference frame and then return the best corresponding points in the test frame
     def sample_pts(self, name='monkey'):
-        hand_gt_pose = np.load(f'./camera/hand_arm/arm_{name}.npy')
+        # hand_gt_pose = np.load(f'./camera/hand_arm/arm_{name}.npy')
+        arm_pose_trasl = np.array([0,0,0])
+        arm_pose_rot = np.array([-0.45260642,  0.08248845,  0.37683634, -1.34357664, -1.21226209,1.2337978 ])
+        hand_pose = np.array([ 0.00000000e+00,  0.00000000e+00, -1.51528783e-01,  0.00000000e+00,
+        8.95708154e-01,  8.95708154e-01, -8.84832114e-02,  1.44736418e-01,
+        7.89267820e-01,  7.89267820e-01,  1.34709520e-01,  1.36436849e-02,
+        8.19381827e-01,  8.19381827e-01,  9.25745472e-02, -1.59699768e-01,
+        4.12718615e-20,  7.50248799e-01,  7.50248799e-01,  4.23467395e-01,
+        7.37880718e-01,  7.14003058e-02]) #,  2.32554029e-02,  2.09220024e-01])
+        hand_gt_pose = np.concatenate((arm_pose_trasl, arm_pose_rot,hand_pose))
+        hand_gt_pose = np.expand_dims(hand_gt_pose,axis=0)
         hand_gt_pose = torch.from_numpy(hand_gt_pose).float().to(self.dev)
         self.hand.set_parameters(hand_gt_pose, retarget=False, robust=True)
 
