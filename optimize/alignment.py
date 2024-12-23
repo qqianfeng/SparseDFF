@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import open3d as o3d
 from optimize.hand_model import HandModelMJCF
 from optimize.gripper_model import GripperModel
-from scipy.spatial.transform import Rotation 
+from scipy.spatial.transform import Rotation
 import yaml
 from matplotlib import cm
 from optimize.hand_model import robust_compute_rotation_matrix_from_ortho6d
@@ -67,7 +67,7 @@ def read_hand_arm(forder_path:str='./camera/hand_arm', name=None):
         hand2EE = np.eye(4)
         hand2EE[:3, :3] = Rotation.from_euler('xyz', [0, 0, np.pi]).as_matrix()
         hand2EE[:3, 3] = [0, -0.01, 0.247]
-        rot_m = rot_m @ hand2EE 
+        rot_m = rot_m @ hand2EE
 
 
         rot_world = rot_m[:3, :3]
@@ -96,7 +96,7 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
                 color_list.append((np.random.rand(3) * 255).astype(np.int32).tolist() + [255])
         else:
             color_list = colors
-    
+
     tpcd_list = []
     for i, pcd in enumerate(np_pcd_list):
         tpcd = trimesh.PointCloud(pcd)
@@ -109,11 +109,11 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
 
         tpcd_list.append(tpcd)
 
-    
+
     scene = trimesh.Scene()
     scene.add_geometry(tpcd_list)
     scene.add_geometry(mesh_list)
-    
+
     if show:
         scene.show()
     if name:
@@ -123,13 +123,13 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
     return scene
 
 class Hand_AlignmentCheck:
-    def __init__(self, interpolator1, interpolator2, pcd1, pcd2, 
-                 color_ref1:np.ndarray=None, color_ref2:np.ndarray=None, 
+    def __init__(self, interpolator1, interpolator2, pcd1, pcd2,
+                 color_ref1:np.ndarray=None, color_ref2:np.ndarray=None,
                  points_vis1:np.ndarray=None, points_vis2:np.ndarray=None,
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
                  points_ref:torch.Tensor=None, skip_inverse:bool = False,
-                 opt_iterations=1500, opt_nums=500, 
-                 trimesh_viz=False, hand_file = "./mjcf/shadow_hand_vis.xml", 
+                 opt_iterations=1500, opt_nums=500,
+                 trimesh_viz=False, hand_file = "./mjcf/shadow_hand_vis.xml",
                  tip_aug=None, name=None):
         ### load the model and set the params
         self.interpolator1, self.interpolator2 = interpolator1, interpolator2
@@ -159,11 +159,11 @@ class Hand_AlignmentCheck:
 
     ###### can sample some pt from the reference frame and then return the best corresponding points in the test frame
     def sample_pts(self, name='monkey'):
-        hand_gt_pose = np.load(f'./camera/hand_arm/ref_pose_{name}.npy')
+        hand_gt_pose = np.load(f'./camera/hand_arm/arm_{name}.npy')
         hand_gt_pose = torch.from_numpy(hand_gt_pose).float().to(self.dev)
         self.hand.set_parameters(hand_gt_pose, retarget=False, robust=True)
 
-        
+
         vquery_mesh = self.hand.get_trimesh_data(0)
         hand_gt:np.ndarray = self.hand.get_surface_points()[0].detach().cpu().numpy()
         self.hand.save_pose('./data/des_ori.npy', hand_gt_pose, False, False)
@@ -182,15 +182,15 @@ class Hand_AlignmentCheck:
         best_idx = 0
         M = 10
 
-        motion = (torch.rand(M, 31)*0.03).float().to(self.dev)        
+        motion = (torch.rand(M, 31)*0.03).float().to(self.dev)
         motion[:, 2] = float(self.pcd2[:, 2].max()) + (torch.rand(M)*0.1 + 0.2)[None, :].float().to(self.dev)
-        motion[:, 0:2] = (torch.rand(M, 2)*0.2).float().to(self.dev) 
+        motion[:, 0:2] = (torch.rand(M, 2)*0.2).float().to(self.dev)
         motion[:, 3:9] = torch.from_numpy(np.array([0,-1,0,0,0,1])[None, :].repeat(M, axis=0)).to(self.dev)
-        
+
         ori_rotm = torch.from_numpy(np.array([0., 0 ,-1,-1,0,0,0,1,0]).reshape((3,3))).to(self.dev).to(torch.float32)
         motion.requires_grad_()
         opt = torch.optim.Adam([motion], lr=1e-2)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)  
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)
 
         loss_values = []
 
@@ -205,7 +205,7 @@ class Hand_AlignmentCheck:
             X_new_ori = self.hand.get_surface_points()
             # vis_color_pc(X_new_ori[0].detach().cpu().numpy(), None, 0.1 , save=False, rot=ori_rotm.cpu().numpy())
             # exit()
-            X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale 
+            X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale
             self.perturb_scale *= self.perturb_decay
 
             ######################### stuff for visualizing the reconstruction ##################33
@@ -217,8 +217,8 @@ class Hand_AlignmentCheck:
                 pcd_traj_list[jj].append(centroid)
                 if len(execution_traj_list[jj]) == 0 or np.linalg.norm((execution_traj_list[jj][-1][:3] - motion[jj].detach().cpu().numpy()[:3])) > 0.01:
                     execution_traj_list[jj].append(motion_save[jj])
-                    
-                    
+
+
             ###############################################################################
 
             act_hat = self.interpolator2.predict(X_new)
@@ -227,8 +227,8 @@ class Hand_AlignmentCheck:
 
             losses = [self.loss_fn(act_hat[ii].view(t_size), reference_act_hat) for ii in range(M)]
             losses = torch.stack(losses)
-            
-            
+
+
             # distances = self.hand.cal_distance(self.points_ref.expand(M, -1, -1))
             # distances[distances <= 0] = 0
             # E_pen = distances.sum(-1)
@@ -238,7 +238,7 @@ class Hand_AlignmentCheck:
 
             rot_ms = robust_compute_rotation_matrix_from_ortho6d(motion[:, 3:9])
             rot_ms = rot_ms.reshape((M, 3, 3)).to(torch.float32)
-            
+
             x_axis_ori_hand = ori_rotm[:, 0][None, ...].repeat(M, 1)
             y_axis_ori_hand = ori_rotm[:, 1][None, ...].repeat(M, 1)
             z_axis_ori_hand = ori_rotm[:, 2][None, ...].repeat(M, 1)
@@ -246,7 +246,7 @@ class Hand_AlignmentCheck:
             z_axis_object = rot_ms[:, :, 2]
             z_axis_y = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 0][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 0][None, ...].repeat(M, 1)
             z_axis_y = z_axis_y / (torch.norm(z_axis_y, dim=1, keepdim=True) + 1e-8)
-        
+
             roll = torch.arccos(torch.clamp(torch.sum(z_axis_y * z_axis_ori_hand, dim=-1), -1 + 1e-4, 1-1e-4))
             sign_roll = torch.sign(torch.sum(z_axis_y * y_axis_ori_hand, dim=-1))
             roll = roll * sign_roll
@@ -254,7 +254,7 @@ class Hand_AlignmentCheck:
             roll[roll < np.pi / 6 * 0.8] = 0
             roll = torch.abs(roll)
             roll[roll >= np.pi / 6 * 0.8]  -= np.pi / 6 * 0.8
-            
+
 
             z_axis_x = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 1][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 1][None, ...].repeat(M, 1)
             z_axis_x = z_axis_x / (torch.norm(z_axis_x, dim=1, keepdim=True) + 1e-8)
@@ -263,7 +263,7 @@ class Hand_AlignmentCheck:
             pitch = pitch * sign_pitch
             pitch[pitch.abs() < torch.pi / 6] = 0
             pitch = torch.abs(pitch)
-            pitch[pitch >= torch.pi / 6] -= torch.pi / 6     
+            pitch[pitch >= torch.pi / 6] -= torch.pi / 6
 
             if roll.any():
                 losses += roll * 1e-1
@@ -282,7 +282,7 @@ class Hand_AlignmentCheck:
             opt.step()
             if i % 50 == 0:
                 scheduler.step()
-            
+
         if self.skip_inverse:
             rot_sixd = self.hand.save_pose(path=None, hand_pose=motion)[:, 3:9]
             rot_m = np.eye(3)[None, ...].repeat(M, axis=0)
@@ -327,13 +327,13 @@ class Hand_AlignmentCheck:
 
 
 class Gripper_AlignmentCheck:
-    def __init__(self, interpolator1, interpolator2, pcd1, pcd2, 
-                 color_ref1:np.ndarray=None, color_ref2:np.ndarray=None, 
+    def __init__(self, interpolator1, interpolator2, pcd1, pcd2,
+                 color_ref1:np.ndarray=None, color_ref2:np.ndarray=None,
                  points_vis1:np.ndarray=None, points_vis2:np.ndarray=None,
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
                  points_ref:torch.Tensor=None, skip_inverse:bool = False,
-                 opt_iterations=1500, opt_nums=500, 
-                 trimesh_viz=False, hand_file = "mjcf/shadow_hand_wrist_free.xml", 
+                 opt_iterations=1500, opt_nums=500,
+                 trimesh_viz=False, hand_file = "mjcf/shadow_hand_wrist_free.xml",
                  tip_aug=None, name=None):
         ### load the model and set the params
         self.interpolator1, self.interpolator2 = interpolator1, interpolator2
@@ -385,15 +385,15 @@ class Gripper_AlignmentCheck:
 
         best_loss = np.inf
         best_idx = 0
-        M = 10 
+        M = 10
 
-        motion = (torch.rand(M, 9)*0.3).float().to(self.dev)        
+        motion = (torch.rand(M, 9)*0.3).float().to(self.dev)
 
         motion[:, 2] = float(self.pcd2[:, 2].max()) + (torch.rand(M)*0.1)[None, :].float().to(self.dev)
         motion[:, 0:2] = (torch.rand(M, 2)*0.4).float().to(self.dev) - 0.2
         motion.requires_grad_()
         opt = torch.optim.Adam([motion], lr=1e-2)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)  
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)
 
         loss_values = []
 
@@ -408,7 +408,7 @@ class Gripper_AlignmentCheck:
             X_new_ori = self.gripper.get_surface_points()
             # vis_color_pc(X_new_ori[0].detach().cpu().numpy(), None, 0.1 , save=False, rot=ori_rotm.cpu().numpy())
             # exit()
-            X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale 
+            X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale
             self.perturb_scale *= self.perturb_decay
 
             ######################### stuff for visualizing the reconstruction ##################33
@@ -440,7 +440,7 @@ class Gripper_AlignmentCheck:
             opt.step()
             if i % 50 == 0:
                 scheduler.step()
-        
+
         best_idx = torch.argmin(losses).item()
         best_loss = losses[best_idx]
         print('best loss: %f, best_idx: %d' % (best_loss, best_idx))

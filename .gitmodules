@@ -1,4 +1,4 @@
-[submodule "thirdparty_module/TorchSDF"] 
+[submodule "thirdparty_module/TorchSDF"]
     path = thirdparty_module/TorchSDF
     url = git@github.com:wrc042/TorchSDF.git
 
