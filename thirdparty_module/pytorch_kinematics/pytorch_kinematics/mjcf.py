@@ -9,7 +9,7 @@ JOINT_TYPE_MAP = {'hinge': 'revolute', None: 'revolute'}
 def geoms_to_visuals(geom, base=tf.Transform3d()):
     visuals = []
     for g in geom:
-        if g.type == 'capsule':
+        if g.type == 'capsule' or g.type == 'cylinder':
             param = g.size
         elif g.type == 'sphere':
             param = g.size[0]

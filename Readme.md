@@ -188,9 +188,9 @@ python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 
 # Adapt Biglab Setup
 ## todos
-1. './camera/workspace/calibration.json'
-2. import 4 images/depth
-3. do we need to retrain the alignment network?
-4. convert hithand urdf to mjcf from
-https://docs.kscale.dev/utils/urdf2mjcf
-5. import collected grasp pose
+[] 1. './camera/workspace/calibration.json'
+[] 2. import 4 images/depth
+[] 3. do we need to retrain the alignment network?
+[x] 4. convert hithand urdf to mjcf from
+   https://docs.kscale.dev/utils/urdf2mjcf
+[] 5. import collected grasp pose

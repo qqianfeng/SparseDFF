@@ -13,7 +13,7 @@ import pytorch3d.ops
 import torch.nn.functional as F
 import numpy as np
 # from torchsdf import index_vertices_by_faces, compute_sdf
-from scipy.spatial.transform import Rotation 
+from scipy.spatial.transform import Rotation
 
 def robust_compute_rotation_matrix_from_ortho6d(poses):
     """
@@ -61,9 +61,9 @@ def cross_product(u, v):
     i = u[:, 1] * v[:, 2] - u[:, 2] * v[:, 1]
     j = u[:, 2] * v[:, 0] - u[:, 0] * v[:, 2]
     k = u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0]
-        
+
     out = torch.cat((i.view(batch, 1), j.view(batch, 1), k.view(batch, 1)), 1)
-        
+
     return out
 
 def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
@@ -98,11 +98,11 @@ def rotation_6d_to_matrix_ori(d6: torch.Tensor) -> torch.Tensor:
 
 class HandModelMJCF:
     def __init__(self, mjcf_path, mesh_path=None, n_surface_points=2000, device=None,
-                 penetration_points_path='mjcf/shadow_hand_vis.xml', 
+                 penetration_points_path='mjcf/shadow_hand_vis.xml',
                  tip_aug=None, ref_points=None):
         """
 
-        
+
         Parameters
         ----------
         mjcf_path: str
@@ -118,12 +118,12 @@ class HandModelMJCF:
             self.device = device
         self.chain:pk.chain.chain = pk.build_chain_from_mjcf(
             open(mjcf_path).read()).to(dtype=torch.float, device=self.device)
-        
-        # ['robot0:FFJ3', 'robot0:FFJ2', 'robot0:FFJ1', 'robot0:FFJ0', 
-        # 'robot0:MFJ3', 'robot0:MFJ2', 'robot0:MFJ1', 'robot0:MFJ0', 
-        # 'robot0:RFJ3', 'robot0:RFJ2', 'robot0:RFJ1', 'robot0:RFJ0', 
-        # 'robot0:LFJ4', 'robot0:LFJ3', 'robot0:LFJ2', 'robot0:LFJ1', 
-        # 'robot0:LFJ0', 'robot0:THJ4', 'robot0:THJ3', 'robot0:THJ2', 
+
+        # ['robot0:FFJ3', 'robot0:FFJ2', 'robot0:FFJ1', 'robot0:FFJ0',
+        # 'robot0:MFJ3', 'robot0:MFJ2', 'robot0:MFJ1', 'robot0:MFJ0',
+        # 'robot0:RFJ3', 'robot0:RFJ2', 'robot0:RFJ1', 'robot0:RFJ0',
+        # 'robot0:LFJ4', 'robot0:LFJ3', 'robot0:LFJ2', 'robot0:LFJ1',
+        # 'robot0:LFJ0', 'robot0:THJ4', 'robot0:THJ3', 'robot0:THJ2',
         # 'robot0:THJ1', 'robot0:THJ0']
 
         self.n_dofs = len(self.chain.get_joint_parameter_names())
@@ -140,7 +140,7 @@ class HandModelMJCF:
             """hand-made a obj style mesh for each body
 
             Args:
-                body (a chain object): 
+                body (a chain object):
             """
             if (len(body.link.visuals) > 0):
                 link_name = body.link.name
@@ -158,10 +158,21 @@ class HandModelMJCF:
                     elif visual.geom_type == "capsule":
                         link_mesh = trimesh.primitives.Capsule(
                             radius=visual.geom_param[0], height=visual.geom_param[1]*2).apply_translation((0, 0, -visual.geom_param[1]))
+                    elif visual.geom_type == "cylinder":
+                        try:
+                            link_mesh = trimesh.primitives.Cylinder(
+                                radius=visual.geom_param[0], height=visual.geom_param[1]*2).apply_translation((0, 0, -visual.geom_param[1]))
+                        except Exception:
+                            radius_tmp = torch.tensor(0.001,dtype=torch.float64)
+                            height_tmp = torch.tensor(0.0005,dtype=torch.float64)
+                            link_mesh = trimesh.primitives.Cylinder(
+                                radius=radius_tmp, height=height_tmp*2).apply_translation((0, 0, -height_tmp))
                     else:
                     ### one kind of the link_mesh
+                        # link_mesh = trimesh.load_mesh(
+                        #     os.path.join(mesh_path, visual.geom_param[0].split(":")[1]+".obj"), process=False)
                         link_mesh = trimesh.load_mesh(
-                            os.path.join(mesh_path, visual.geom_param[0].split(":")[1]+".obj"), process=False)
+                            os.path.join(mesh_path, visual.geom_param[0]+".obj"), process=False)
                         if visual.geom_param[1] is not None:
                             scale = (visual.geom_param[1]).to(dtype=torch.float, device=device)
                     vertices = torch.tensor(
@@ -200,21 +211,22 @@ class HandModelMJCF:
             self.joints_lower).float().to(self.device)
         self.joints_upper = torch.stack(
             self.joints_upper).float().to(self.device)
-        
+
         # sample surface points
         # print(areas)
-        if tip_aug:
-            areas['robot0:ffdistal_child'] *= tip_aug
-            areas['robot0:mfdistal_child'] *= tip_aug
-            areas['robot0:rfdistal_child'] *= tip_aug
-            areas['robot0:lfdistal_child'] *= tip_aug
-            areas['robot0:thdistal_child'] *= tip_aug
+        # TODO: bug, skip for now
+        # if tip_aug:
+        #     areas['robot0:ffdistal_child'] *= tip_aug
+        #     areas['robot0:mfdistal_child'] *= tip_aug
+        #     areas['robot0:rfdistal_child'] *= tip_aug
+        #     areas['robot0:lfdistal_child'] *= tip_aug
+        #     areas['robot0:thdistal_child'] *= tip_aug
 
-            areas['robot0:ffmiddle_child'] *= tip_aug * 0.8
-            areas['robot0:lfmiddle_child'] *= tip_aug * 0.8
-            areas['robot0:rfmiddle_child'] *= tip_aug * 0.8
-            areas['robot0:mfmiddle_child'] *= tip_aug * 0.8
-            areas['robot0:thmiddle_child'] *= tip_aug * 0.8
+        #     areas['robot0:ffmiddle_child'] *= tip_aug * 0.8
+        #     areas['robot0:lfmiddle_child'] *= tip_aug * 0.8
+        #     areas['robot0:rfmiddle_child'] *= tip_aug * 0.8
+        #     areas['robot0:mfmiddle_child'] *= tip_aug * 0.8
+        #     areas['robot0:thmiddle_child'] *= tip_aug * 0.8
 
         total_area = sum(areas.values())
         num_samples = dict([(link_name, int(areas[link_name] / total_area * n_surface_points)) for link_name in self.mesh])
@@ -228,9 +240,9 @@ class HandModelMJCF:
             surface_points = pytorch3d.ops.sample_farthest_points(dense_point_cloud, K=num_samples[link_name])[0][0]
             surface_points.to(dtype=float, device=self.device)
             self.mesh[link_name]['surface_points'] = surface_points
-        
+
         self.link_name_to_link_index = dict(zip([link_name for link_name in self.mesh], range(len(self.mesh))))
-        
+
         # self.penetration_keypoints = [self.mesh[link_name]['penetration_keypoints'] for link_name in self.mesh]
         # self.global_index_to_link_index_penetration = sum([[i] * len(penetration_keypoints) for i, penetration_keypoints in enumerate(self.penetration_keypoints)], [])
         # self.penetration_keypoints = torch.cat(self.penetration_keypoints, dim=0)
@@ -242,20 +254,20 @@ class HandModelMJCF:
         self.global_translation = None
         self.global_rotation = None
         self.current_status = None
-    
+
     def project_to_range(self, values:torch.Tensor):
         '''
         Project joint values to the joint ranges
         '''
         values = torch.sigmoid(values) # Sigmoid function maps values to range (0, 1)
-        values = values * (self.joints_upper[None, :] - self.joints_lower[None, :]) + self.joints_lower[None, :] # Map values to range 
+        values = values * (self.joints_upper[None, :] - self.joints_lower[None, :]) + self.joints_lower[None, :] # Map values to range
         return values
 
     def save_pose(self, path=None, hand_pose:torch.Tensor=None, retarget:bool = True, robust:bool = True, idx=0):
         """
         Save hand pose to a file or return the pose as np.ndarray
         when directly save the poses, assume the hand_pose is a batch of poses and we only save one of them. (idx)
-        
+
         Parameters
         ----------
         path: str
@@ -263,7 +275,7 @@ class HandModelMJCF:
                 path to save file
             else:
                 return the pose as np.ndarray
-        hand_pose: 
+        hand_pose:
             (B, 3+6+`n_dofs`) torch.Tensor (not detach / on cuda device is also ok)
         """
         hand_pose = hand_pose.detach()
@@ -290,23 +302,23 @@ class HandModelMJCF:
             if pose.ndim == 2:
                 pose = pose[idx]
             assert pose.ndim == 1
-            np.save(path, pose) 
+            np.save(path, pose)
 
 
     def set_parameters(self, hand_pose, retarget:bool = True, robust:bool = True):
         """
         Set translation, rotation, and joint angles of grasps
-        
+
         Parameters
         ----------
         hand_pose: (B, 3+6+`n_dofs`) torch.FloatTensor
             translation, rotation in rot6d, and joint angles
         """
-        # ['robot0:FFJ3', 'robot0:FFJ2', 'robot0:FFJ1', 'robot0:FFJ0', 
-        # 'robot0:MFJ3', 'robot0:MFJ2', 'robot0:MFJ1', 'robot0:MFJ0', 
-        # 'robot0:RFJ3', 'robot0:RFJ2', 'robot0:RFJ1', 'robot0:RFJ0', 
-        # 'robot0:LFJ4', 'robot0:LFJ3', 'robot0:LFJ2', 'robot0:LFJ1', 
-        # 'robot0:LFJ0', 'robot0:THJ4', 'robot0:THJ3', 'robot0:THJ2', 
+        # ['robot0:FFJ3', 'robot0:FFJ2', 'robot0:FFJ1', 'robot0:FFJ0',
+        # 'robot0:MFJ3', 'robot0:MFJ2', 'robot0:MFJ1', 'robot0:MFJ0',
+        # 'robot0:RFJ3', 'robot0:RFJ2', 'robot0:RFJ1', 'robot0:RFJ0',
+        # 'robot0:LFJ4', 'robot0:LFJ3', 'robot0:LFJ2', 'robot0:LFJ1',
+        # 'robot0:LFJ0', 'robot0:THJ4', 'robot0:THJ3', 'robot0:THJ2',
         # 'robot0:THJ1', 'robot0:THJ0']
         self.hand_pose = hand_pose
         if retarget:
@@ -318,7 +330,7 @@ class HandModelMJCF:
             temp[:, 20] = - temp[:, 20]
             temp[:, 21] = - temp[:, 21]
             temp[:, 19] = - temp[:, 19]
-        
+
         if self.hand_pose.requires_grad:
             self.hand_pose.retain_grad()
         self.global_translation = self.hand_pose[:, 0:3]
@@ -333,7 +345,7 @@ class HandModelMJCF:
     def get_trimesh_data(self, i):
         """
         Get full mesh
-        
+
         Returns
         -------
         data: trimesh.Trimesh
@@ -349,11 +361,11 @@ class HandModelMJCF:
             f = self.mesh[link_name]['faces'].detach().cpu()
             data += trimesh.Trimesh(vertices=v, faces=f)
         return data
-    
+
     def get_surface_points(self):
         """
         Get surface points
-        
+
         Returns
         -------
         points: (B, `n_surface_points`, 3)
@@ -369,16 +381,16 @@ class HandModelMJCF:
         points = torch.cat(points, dim=-2).to(self.device)
         points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
         return points
-    
+
     def get_intersect(self, M)->bool:
         """
         Get intersection between the hand and the object
-        
+
         Parameters
         ----------
         points: (N, 3)
             surface points
-        
+
         Returns
         -------
         intersect: (bool )
@@ -401,21 +413,21 @@ class HandModelMJCF:
             num_ls.append(num)
         num_ls = torch.tensor(num_ls).to(self.device)
         return num_ls
-    
+
     def cal_distance(self, x):
         """
         Calculate signed distances from object point clouds to hand surface meshes
-        
+
         Interiors are positive, exteriors are negative
-        
+
         Use analytical method and our modified Kaolin package
-        
+
         Parameters
         ----------
         x: (B, N, 3) torch.Tensor
             point clouds sampled from object surface
         """
-        # Consider each link seperately: 
+        # Consider each link seperately:
         #   First, transform x into each link's local reference frame using inversed fk, which gives us x_local
         #   Next, calculate point-to-mesh distances in each link's frame, this gives dis_local
         #   Finally, the maximum over all links is the final distance from one point to the entire ariticulation
@@ -447,11 +459,11 @@ class HandModelMJCF:
         # dis = torch.max(torch.stack(dis, dim=0), dim=0)[0]
         # return dis
         raise NotImplementedError
-    
+
     # def self_penetration(self):
     #     """
     #     Calculate self penetration energy
-        
+
     #     Returns
     #     -------
     #     E_spen: (N,) torch.Tensor
@@ -473,11 +485,11 @@ class HandModelMJCF:
     #     dis = 0.02 - dis
     #     E_spen = torch.where(dis > 0, dis, torch.zeros_like(dis))
     #     return E_spen.sum((1,2))
-    
+
     def get_E_joints(self):
         """
         Calculate joint energy
-        
+
         Returns
         -------
         E_joints: (N,) torch.Tensor
@@ -486,11 +498,11 @@ class HandModelMJCF:
         E_joints = E_joints = torch.sum((self.hand_pose[:, 9:] > self.joints_upper) * (self.hand_pose[:, 9:] - self.joints_upper), dim=-1) + \
         torch.sum((self.hand_pose[:, 9:] < self.joints_lower) * (self.joints_lower - self.hand_pose[:, 9:]), dim=-1)
         return E_joints
-    
+
     # def get_penetration_keypoints(self):
     #     """
     #     Get penetration keypoints
-        
+
     #     Returns
     #     -------
     #     points: (N, `n_keypoints`, 3) torch.Tensor
@@ -516,5 +528,5 @@ if __name__ == '__main__':
     motion = (torch.rand(M, 31)*0.1).float().to(torch.device('cuda:0'))
     hand = HandModelMJCF("/home/user/wangqx/stanford/mjcf/shadow_hand_wrist_free.xml", "/home/user/wangqx/stanford/mjcf/meshes", n_surface_points=50, device=torch.device('cuda:0'), tip_aug=2, ref_points=points)
     hand.set_parameters(motion)
-    
+
     bool = hand.cal_distance(points)

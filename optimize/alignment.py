@@ -129,7 +129,7 @@ class Hand_AlignmentCheck:
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
                  points_ref:torch.Tensor=None, skip_inverse:bool = False,
                  opt_iterations=1500, opt_nums=500,
-                 trimesh_viz=False, hand_file = "./mjcf/shadow_hand_vis.xml",
+                 trimesh_viz=False, hand_file = "./mjcf/hithand_mojuco.xml",
                  tip_aug=None, name=None):
         ### load the model and set the params
         self.interpolator1, self.interpolator2 = interpolator1, interpolator2
