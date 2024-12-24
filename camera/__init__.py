@@ -12,6 +12,7 @@ import json
 from scipy.spatial.transform import Rotation
 import os
 import skimage
+import re
 
 CAM = {
     "cam0": '000299113912',
@@ -59,6 +60,38 @@ def get_dino_features(img_raw:np.ndarray, scale:int=3)->torch.Tensor:
     features = torch.nn.functional.interpolate(features.unsqueeze(0), size=(img_raw.shape[0] // scale , img_raw.shape[1] // scale ), mode='bilinear', align_corners=False)
     features = features.squeeze(0).permute(1, 2, 0)
     return features
+
+def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.ndarray)->np.ndarray:
+    """
+    Args:
+        depths (np.ndarray): (n, h, w)
+        K (np.ndarray): the intrinsics (n, 3, 3)
+        R (np.ndarray): the transformation matrix (n, 4, 4)
+
+    """
+
+    with open('example_data/demos/transforms.json', 'r') as f:
+        demo_transform = json.load(f)
+    cam_intrinsics = o3d.camera.PinholeCameraIntrinsic()
+    cam_intrinsics.set_intrinsics(width=1280, height=720, fx=demo_transform['fl_x'],
+                                  fy=demo_transform['fl_y'], cx=demo_transform['cx'], cy=demo_transform['cy'])
+
+    points = []
+    for i in range(depths.shape[0]):
+        color = colors[i]
+        depth = depths[i]
+        color_o3d = o3d.geometry.Image(cv2.cvtColor(color, cv2.COLOR_BGR2RGB))
+        depth_o3d = o3d.geometry.Image(depth)
+        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
+            color_o3d, depth_o3d, depth_scale=1000.0, depth_trunc=1.5, convert_rgb_to_intensity=False
+        )
+        pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, cam_intrinsics)
+        pcd = pcd.transform(R[i])
+        pcd_np = np.array(pcd.points)
+        pcd_np *= 1000 # convert from m to mm
+        points.append(pcd_np)
+
+    return points
 
 def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=True)->np.ndarray:
     """
@@ -127,15 +160,20 @@ def load_cddi(data_path):
     """
     if not os.path.isdir(data_path):
         raise ValueError("data_path should be a folder")
+    indexes = [5,15,25,35]
+    calib_path = 'camera/workspace/calibration.json'
+    with open(calib_path, 'r') as f:
+        calib = json.load(f)
+
     colors_ls, depths_ls, distortion_ls, intrinsics_ls = [], [], [], []
-    for serial_num in CAM_INDEX:
-        path = os.path.join(data_path, serial_num)
-        if not os.path.isdir(path):
-            raise ValueError(f"Cannot find {path}")
-        colors = np.load(os.path.join(path, 'colors.npy'))
-        depths = np.load(os.path.join(path, 'depth.npy'))
-        distortion = np.load(os.path.join(path, 'distortion.npy'))
-        intrinsics = np.load(os.path.join(path, 'intrinsic.npy'))
+    for index in indexes:
+        image_path = f'images/frame_{index:05d}.png'
+        depth_path = f'depth/depth_{index:05d}.png'
+
+        colors = cv2.imread(os.path.join(data_path, image_path))
+        depths = cv2.imread(os.path.join(data_path, depth_path),cv2.IMREAD_UNCHANGED)
+        distortion = calib['cameras']['cam0']['dist']
+        intrinsics = calib['cameras']['cam0']['K']
         colors_ls.append(colors)
         depths_ls.append(depths)
         distortion_ls.append(distortion)
@@ -149,15 +187,8 @@ def load_cddi(data_path):
 def read_tranformation(data_path:str='./camera/transform.yaml'):
     with open(data_path, 'r') as f:
         data = yaml.load(f, Loader=yaml.FullLoader)
-    position = np.array([data['pose']['position']['x'], data['pose']['position']['y'], data['pose']['position']['z']])
-    quaternion = np.array([data['pose']['orientation']['x'], data['pose']['orientation']['y'], data['pose']['orientation']['z'], data['pose']['orientation']['w']])
-    table2cam = np.eye(4)
-    table2cam[:3, 3] = position
-    table2cam[:3, :3] = Rotation.from_quat(quaternion).as_matrix()
-    cam2base_str:str = data['cam2base']
-    cam2base_str = cam2base_str.replace('[', '').replace(']', '').replace('\n', '')
-    cam2base = np.array([float(i) for i in cam2base_str.split()]).reshape(4, 4)
-    return table2cam, cam2base
+
+    return np.array(data['colmap2world']), np.array(data['cam2base'])
 
 
 def get_extrinsics_from_json(path:str, transformation_path:str='./camera/transform.yaml'):
@@ -171,35 +202,39 @@ def get_extrinsics_from_json(path:str, transformation_path:str='./camera/transfo
         np.ndarray: extrinsics of the four cameras [world_cam] shape: (4, 4, 4)
     """
 
-    with open(path, 'r') as f:
-        data = json.load(f)
-    cam1 = data['camera_poses']["cam1_to_cam0"]
-    cam2 = data['camera_poses']["cam2_to_cam0"]
-    cam3 = data['camera_poses']["cam3_to_cam0"]
+    new_path = 'example_data/demos/transforms.json'
+    with open(new_path, 'r') as f:
+        new_data = json.load(f)
+
+    for frame in new_data['frames']:
+        match = re.search(r'frame_(\d+)', frame['file_path'])
+        if match:
+            number = int(match.group(1))  # Use group(1) to get the captured number
+            if number == 5:
+                colmap_T_cam0 = frame['transform_matrix']
+            elif number == 15:
+                colmap_T_cam1 = frame['transform_matrix']
+            elif number == 25:
+                colmap_T_cam2 = frame['transform_matrix']
+            elif number == 35:
+                colmap_T_cam3 = frame['transform_matrix']
+        else:
+            raise ValueError('no match found')
+
     if os.path.isfile(transformation_path):
-        table2cam, cam2base = read_tranformation(transformation_path)
+        colmap2world, cam2base  = read_tranformation(transformation_path)
     else:
-        table2cam, cam2base = read_tranformation('../camera/transform.yaml')
-    ### we seen the table frame as the world frame
-    world_c0 = table2cam
-    world_c0[:3, 3] = world_c0[:3, 3] * 1000
-    world2base = cam2base @ world_c0
+        colmap2world, cam2base  = read_tranformation('../camera/transform.yaml')
+    # colmap is in their paper world, world is in their paper robot base
+    base_T_colmap = colmap2world
+    base_T_cam0 = np.matmul(base_T_colmap, colmap_T_cam0)
+    base_T_cam1 = np.matmul(base_T_colmap, colmap_T_cam1)
+    base_T_cam2 = np.matmul(base_T_colmap, colmap_T_cam2)
+    base_T_cam3 = np.matmul(base_T_colmap, colmap_T_cam3)
 
-    c0_c1 = np.eye(4)
-    c0_c1[:3, :3] = np.array(cam1['R']).reshape(3, 3)
-    c0_c1[:3, 3] = np.array(cam1['T']) * 1000
-    world_c1 = c0_c1 @ world_c0
-    c0_c2 = np.eye(4)
-    c0_c2[:3, :3] = np.array(cam2['R']).reshape(3, 3)
-    c0_c2[:3, 3] = np.array(cam2['T']) * 1000
-    world_c2 = c0_c2 @ world_c0
-    c0_c3 = np.eye(4)
-    c0_c3[:3, :3] = np.array(cam3['R']).reshape(3, 3)
-    c0_c3[:3, 3] = np.array(cam3['T']) * 1000
-    world_c3 = c0_c3 @ world_c0
-    extrinsics = np.stack([world_c0, world_c1, world_c2, world_c3], axis=0)
+    extrinsics = np.stack([base_T_cam0, base_T_cam1, base_T_cam2, base_T_cam3], axis=0)
 
-    return extrinsics, world2base
+    return extrinsics
 
 def get_foregroundmark(features:np.ndarray, threshold=0.3):
     """get the **foreground** mask using PCA and dino_feature
@@ -213,7 +248,6 @@ def get_foregroundmark(features:np.ndarray, threshold=0.3):
     norm_feat = minmax_scale(reduced_feat)
     norm_feat = norm_feat.reshape(features.shape[:-1])
     return norm_feat < threshold
-
 
 
 def undistort(colors:np.ndarray, depths:np.ndarray, intrinsics:np.ndarray, distortion:np.ndarray)->(np.ndarray, np.ndarray):
@@ -242,15 +276,6 @@ def undistort(colors:np.ndarray, depths:np.ndarray, intrinsics:np.ndarray, disto
     depths_undistort = np.stack(depth_undistort_ls, axis=0)
 
     return colors_undistort, depths_undistort
-
-def get_distort_points(path:str, extrinsics:np.ndarray)->(np.ndarray, np.ndarray):
-    from .camera_tools import get_extrinsics_from_json, load_color_pc,\
-transform_points, vis_color_pc, save_colorpc, vis_img, load_depths,\
-load_cddi
-    points, colors = load_color_pc('./data/20230815_165149', mix=False)
-    points = points.reshape(points.shape[0], -1, 3)
-    points_trans = transform_points(points, extrinsics)
-    return points_trans, colors
 
 def get_index_from_range(points:np.ndarray, x=[-420, 420], y=[-560, 560], z=[-200, 800], return_mask:bool = False)->np.ndarray:
     """get the index of the points in the range
@@ -306,7 +331,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     """
     ### get extrinsics(world2cam) and world2base
-    extrinsics, world2base = get_extrinsics_from_json(extrinsics_path)
+    extrinsics = get_extrinsics_from_json(extrinsics_path)
     if data_path:
         # load images
         colors_distort, depths_distort, distortion, intrinsics = load_cddi(data_path)
@@ -318,19 +343,21 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     colors_pile = colors[..., (2, 1, 0)]
     depths[depths < 0] = 0
-    points_undistort = depth2pt_K_numpy(depths, intrinsics, np.linalg.inv(extrinsics), xyz_images=True)
+    # points_undistort = depth2pt_K_numpy(depths, intrinsics, np.linalg.inv(extrinsics), xyz_images=True)
+    points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics)
     detector = Sam_Detector(sam_checkpoint=samckp_path)
     points_ls = []
     features_ls = []
     batch_sign_ls = []
     colors_ls = []
     ### attention! the unit now is mm
-    for idx in range(points_undistort.shape[0]):
+    for idx, _ in enumerate(points_undistort):
         points = points_undistort[idx]
         colors = colors_pile[idx]
         depth = depths[idx]
 
         if prune_method == 'sam':
+            # TODO: tune the crop bbox here
             posi_num = 4
             posi_index = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[20, 1200])
             posi_select_id = np.random.choice(len(posi_index[0]), posi_num // 2)

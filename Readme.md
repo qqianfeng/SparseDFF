@@ -1,4 +1,5 @@
 # SparseDFF: Sparse-View Feature Distillation for One-Shot Dexterous Manipulation
+
 We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RGBD observations, enabling one-shot learning of dexterous manipulations that are transferable to novel scenes.
 
 ***[ICLR 2024](https://iclr.cc/) Accepted***
@@ -9,7 +10,6 @@ We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RG
 
 <img src="./images/teaser.png" alt="Teaser" />
 
-
 ## What's Inside This Repository!
 
 - A brief Introduction to SparseDFF.
@@ -17,10 +17,10 @@ We introduce a novel method for acquiring view-consistent 3D DFFs from sparse RG
 - A Friendly and Useful [guide](./Data_Collection.md) for **Kinect Installation** and **everything you need for data colection**!. Additional Codes for *automatic image capturing during manipulation transfer at runtime*.
 - Additional codes for EE besides Shadow Hand (Comming soon!)
 
-
-
 ## Method Overview
+
 ### Constructing the Feature Field
+
 <img src="./images/constructDFF.png" alt="constructDFF" />
 Initially, we map the image features to the 3D point cloud, allowing for propagation across the 3D space to establish a dense feature field.
 
@@ -29,17 +29,16 @@ Then, A lightweight feature refinement network optimizes with a contrastive loss
 Additionally, we implement a point-pruning mechanism to augment feature continuity within each local neighborhood.
 
 ### Optimize the EE Pose
+
 <img src="./images/method_hand_optim.jpg" alt="method_hand_optim" />
 By establishing coherent feature fields on both source and target scenes, we devise an energy function that facilitates the minimization of feature discrepancies w.r.t. the end-effector parameters between the demonstration and the target manipulation.
-
-
 
 ## Installation
 
 We provide sample data that allows you to directly conduct manipulation transfer within our collected data, and offer visualization code for visualizing the experimental results. Additionally, we also provide code for data collection using Kinect. For additional environment configuration and instructions, please refer to [Data Collection](#data-collection) Part.
 
-
 We provide bash script for example data download and pretrained model download.
+
 ```
 git clone --recurse-submodules git@github.com:Halowangqx/SparseDFF.git
 conda create -n sparsedff python=3.9
@@ -64,17 +63,13 @@ bash pth_download.sh
 bash download.sh
 ```
 
-
-
 ## Camera Installation
 
->  If you simply wish to run our model (including both training and inference) on pre-captured data, there's no need for the following installation steps. Go ahead and start playing with SparseDFF directly!
+> If you simply wish to run our model (including both training and inference) on pre-captured data, there's no need for the following installation steps. Go ahead and start playing with SparseDFF directly!
 >
 > However, if you intend to collect your own data using Azure Kinect, please proceed with the following setup.
 
 [Friendly and Useful Installation guide for Kinect SDK](./Data_Collection.md)
-
-
 
 ## Step-by-step Tutorial
 
@@ -85,16 +80,12 @@ If you'd like to quickly experience the results of our model, you can directly u
 #### Testing Steps
 
 1. **Configuration Management**: All configurations are managed via the `config.yaml` file. You can find detailed usage instructions and comments for each parameter within this file.
-
 2. **Running the Test**: To test using the default example data, execute the following command:
 
    ```
    python unified_optimize.py
    ```
-
 3. **A brief Visualization of Result **: After completing the test, if `visualize` is set to `true` in `config.yaml`, a clear trimesh visualization will be presented. Otherwise, the visualization result will be saved as an image.
-
-
 
 ### Play with your Own Data
 
@@ -106,7 +97,7 @@ If you wish to test with your own data, follow these steps!
 
 We utilize four [Azure Kinects](https://azure.microsoft.com/en-us/products/kinect-dk) for data collection. The steps are as follows:
 
-**Capturing 3D Data**: Use`camera/capture_3d.py` to collect the data required for the model:
+**Capturing 3D Data**: Use `camera/capture_3d.py` to collect the data required for the model:
 
 ```bash
 cd camera
@@ -137,13 +128,11 @@ To train the refinement model corresponding to your data, follow these steps:
    cd refinement
    python read.py --img_data_path 20231010_monkey_original
    ```
-
 2. **Start Training**: Run the following command to train the model:
 
    ```bash
    python train_linear_probe.py --mode glayer --key 0
    ```
-
 3. **Model Configuration**: After training, you can find the corresponding checkpoint in the refinement directory, and then update the `model_path` in `config.yaml` to the appropriate path.
 
 ### Testing with Your Data
@@ -161,8 +150,6 @@ We also provide a pipeline for **automatic image capturing during manipulation t
 
 With these steps, you can either quickly test our model with provided materials or delve deeper into experiments and model training with your own data. We look forward to seeing the innovative applications you create using our model!
 
-
-
 # Visualize
 
 We provide the `vis_features.py` script in order to perform further fine-grained visualization on the data in the  `./data `directory.
@@ -170,11 +157,13 @@ We provide the `vis_features.py` script in order to perform further fine-grained
 All the Visualizations will be saved in `./visulize` directory.
 
 Visualize the feature field using the similarity between
+
 ```
 python vis_features.py --mode 3Dsim_volume --key 0
 ```
 
 Visualize the optimization Result
+
 ```
 python vis_features.py --mode result_vis --key=1 --pca --with_hand
 ```
@@ -185,12 +174,16 @@ Visualize the feature similarity between all points in reference pointcloud, tes
 python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 ```
 
-
 # Adapt Biglab Setup
+
 ## todos
-[] 1. './camera/workspace/calibration.json'
-[] 2. import 4 images/depth
+
+[x] 1. './camera/workspace/calibration.json'
+[x] 2. import 4 images/depth
+[] 2.1 fix bug in pcd transform
 [] 3. do we need to retrain the alignment network?
 [x] 4. convert hithand urdf to mjcf from
    https://docs.kscale.dev/utils/urdf2mjcf
 [] 5. import collected grasp pose
+
+transforms.json from demo collection has different intrinsics

@@ -30,16 +30,16 @@ class home_made_feature_interpolator:
         self.sigma = 0.01
         self.points = torch.from_numpy(points).to(torch.float32).to(self.dev)
         self.features = torch.from_numpy(features).to(torch.float32).to(self.dev)
-    
+
     def get_points(self)->np.ndarray:
         return self.points.cpu().numpy()
-    
+
     def predict(self, query_points:torch.Tensor)->torch.Tensor:
         """
             Get the features of the query points
         params:
             query_points (torch.Tensor): coordinates of the query points(batch_size, num_query_points, dim)
-        
+
         return:
             interpolated_features (torch.Tensor): interpolated features of the query points (batch_size, num_query_points, dim)
         """
@@ -49,7 +49,7 @@ class home_made_feature_interpolator:
         query_points = query_points.reshape(-1, dim)
         points_exp = self.points[None, :, :]
         query_points_exp = query_points[:, None, :]
-        
+
         dists = torch.norm((points_exp - query_points_exp), dim=-1)
         if dists.isnan().any():
             raise ValueError('nan in dists')
@@ -62,7 +62,7 @@ class home_made_feature_interpolator:
         interpolated_features = torch.mm(weights, self.features) / torch.sum(weights, dim=1, keepdim=True)
         if interpolated_features.isnan().any():
             raise ValueError('nan in interpolated_features')
-        
+
         return interpolated_features.reshape(b, n, -1)
 class Dino_Processor:
     def __init__(self, conf, name, mode) -> None:
@@ -78,14 +78,16 @@ class Dino_Processor:
         else:
             self.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
+        # demo data
         points1, features1, self.color_ref1, self.points_vis1, self.color_vis1, _ = get_points_features_from_real(path=conf.data1,
                                                             extrinsics_path=conf.extrinsics_path, key=0,
-                                                            dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold, 
+                                                            dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method,verbose=conf.verbose, model_path=conf.model_path,
                                                             scale=conf.scale, name=self.name, p0=conf.img_preprocess[0])
-        points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2, 
-                                                               extrinsics_path=conf.extrinsics_path, key=1, 
-                                                               dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold, 
+        # test data
+        points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2,
+                                                               extrinsics_path=conf.extrinsics_path, key=1,
+                                                               dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                                method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
                                                                scale=conf.scale, name=self.name, p1=conf.img_preprocess[1])
 
@@ -99,16 +101,16 @@ class Dino_Processor:
             print('features2: ', self.features2.shape)
         self.interpolator1 = home_made_feature_interpolator(self.points1, self.features1)
         self.interpolator2 = home_made_feature_interpolator(self.points2, self.features2)
-    
+
     def process(self):
-        
+
         if self.mode == 'hand':
             alignment = Hand_AlignmentCheck(self.interpolator1, self.interpolator2, self.points1, self.points2,
                                                 self.color_ref1, self.color_ref2,
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
                                                 self.points_ref2,
-                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations, 
+                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data1)[-1])
         elif self.mode == 'gripper':
@@ -117,7 +119,7 @@ class Dino_Processor:
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
                                                 self.points_ref2,
-                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations, 
+                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data2)[-1])
         else:
