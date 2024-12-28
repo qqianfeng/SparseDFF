@@ -14,13 +14,6 @@ import os
 import skimage
 import re
 
-CAM = {
-    "cam0": '000299113912',
-    "cam1": '000272313912',
-    "cam2": '000285613912',
-    "cam3": '000262413912',
-}
-CAM_INDEX = [CAM['cam0'], CAM['cam1'], CAM['cam2'], CAM['cam3']]
 
 def get_dino_features(img_raw:np.ndarray, scale:int=3)->torch.Tensor:
     """get dino features for only one img
@@ -61,8 +54,9 @@ def get_dino_features(img_raw:np.ndarray, scale:int=3)->torch.Tensor:
     features = features.squeeze(0).permute(1, 2, 0)
     return features
 
-def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.ndarray)->np.ndarray:
+def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.ndarray, visualize:bool)->np.ndarray:
     """
+    TODO: return point cloud in image shape
     Args:
         depths (np.ndarray): (n, h, w)
         K (np.ndarray): the intrinsics (n, 3, 3)
@@ -77,10 +71,12 @@ def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.nda
                                   fy=demo_transform['fl_y'], cx=demo_transform['cx'], cy=demo_transform['cy'])
 
     points = []
+    pcd_vis = []
     for i in range(depths.shape[0]):
         color = colors[i]
         depth = depths[i]
-        color_o3d = o3d.geometry.Image(cv2.cvtColor(color, cv2.COLOR_BGR2RGB))
+        color_o3d = o3d.geometry.Image(np.ascontiguousarray(color))
+
         depth_o3d = o3d.geometry.Image(depth)
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
             color_o3d, depth_o3d, depth_scale=1000.0, depth_trunc=1.5, convert_rgb_to_intensity=False
@@ -90,6 +86,18 @@ def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.nda
         pcd_np = np.array(pcd.points)
         pcd_np *= 1000 # convert from m to mm
         points.append(pcd_np)
+        pcd_vis.append(pcd)
+
+    if visualize:
+        print('visualize the merged point clouds from 4 views in robot base frame')
+        vis_pcd_list = []
+        for point in pcd_vis:
+            vis_pcd_list.append(point)
+
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1,origin=[0, 0, 0])
+        vis_pcd_list.append(origin_frame)
+
+        o3d.visualization.draw_geometries(vis_pcd_list)
 
     return points
 
@@ -150,7 +158,7 @@ def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=
         batch_sign = batch_sign.reshape(-1)[zero_filter]
         return xyz_img_trans[..., :3].reshape(-1, 3)[zero_filter], batch_sign, zero_filter
 
-def load_cddi(data_path):
+def load_cddi(data_path, extracted_list:list):
     """load colors, depths, distortions, intrinsics from a folder contain multicamera
 
     Args:
@@ -160,13 +168,12 @@ def load_cddi(data_path):
     """
     if not os.path.isdir(data_path):
         raise ValueError("data_path should be a folder")
-    indexes = [5,15,25,35]
     calib_path = 'camera/workspace/calibration.json'
     with open(calib_path, 'r') as f:
         calib = json.load(f)
 
     colors_ls, depths_ls, distortion_ls, intrinsics_ls = [], [], [], []
-    for index in indexes:
+    for index in extracted_list:
         image_path = f'images/frame_{index:05d}.png'
         depth_path = f'depth/depth_{index:05d}.png'
 
@@ -188,10 +195,10 @@ def read_tranformation(data_path:str='./camera/transform.yaml'):
     with open(data_path, 'r') as f:
         data = yaml.load(f, Loader=yaml.FullLoader)
 
-    return np.array(data['colmap2world']), np.array(data['cam2base'])
+    return data
 
 
-def get_extrinsics_from_json(path:str, transformation_path:str='./camera/transform.yaml'):
+def get_extrinsics_from_json(new_path:str, extracted_list:list, transformation_path:str='./camera/transform.yaml'):
     """return the extrinsics of the four cameras
         world2cam0, world2cam1, world2cam2, world2cam3
 
@@ -202,35 +209,53 @@ def get_extrinsics_from_json(path:str, transformation_path:str='./camera/transfo
         np.ndarray: extrinsics of the four cameras [world_cam] shape: (4, 4, 4)
     """
 
-    new_path = 'example_data/demos/transforms.json'
     with open(new_path, 'r') as f:
         new_data = json.load(f)
 
-    for frame in new_data['frames']:
-        match = re.search(r'frame_(\d+)', frame['file_path'])
-        if match:
-            number = int(match.group(1))  # Use group(1) to get the captured number
-            if number == 5:
-                colmap_T_cam0 = frame['transform_matrix']
-            elif number == 15:
-                colmap_T_cam1 = frame['transform_matrix']
-            elif number == 25:
-                colmap_T_cam2 = frame['transform_matrix']
-            elif number == 35:
-                colmap_T_cam3 = frame['transform_matrix']
-        else:
-            raise ValueError('no match found')
+    if os.path.basename(new_path) == 'transforms_gt_ocv.json':
+        # if read transform from base to cam
+        for frame in new_data['frames']:
+            match = re.search(r'frame_(\d+)', frame['file_path'])
+            if match:
+                number = int(match.group(1))  # Use group(1) to get the captured number
+                if number == extracted_list[0]:
+                    base_T_cam0 = frame['transform_matrix']
+                elif number == extracted_list[1]:
+                    base_T_cam1 = frame['transform_matrix']
+                elif number == extracted_list[2]:
+                    base_T_cam2 = frame['transform_matrix']
+                elif number == extracted_list[3]:
+                    base_T_cam3 = frame['transform_matrix']
+            else:
+                raise ValueError('no match found')
 
-    if os.path.isfile(transformation_path):
-        colmap2world, cam2base  = read_tranformation(transformation_path)
-    else:
-        colmap2world, cam2base  = read_tranformation('../camera/transform.yaml')
-    # colmap is in their paper world, world is in their paper robot base
-    base_T_colmap = colmap2world
-    base_T_cam0 = np.matmul(base_T_colmap, colmap_T_cam0)
-    base_T_cam1 = np.matmul(base_T_colmap, colmap_T_cam1)
-    base_T_cam2 = np.matmul(base_T_colmap, colmap_T_cam2)
-    base_T_cam3 = np.matmul(base_T_colmap, colmap_T_cam3)
+    elif os.path.basename(new_path) == 'transforms_base2flange.json':
+        for frame in new_data['frames']:
+            match = re.search(r'frame_(\d+)', frame['file_path'])
+            if match:
+                number = int(match.group(1))  # Use group(1) to get the captured number
+                if number == 3:
+                    base_T_flange0 = frame['transform_matrix']
+                elif number == 13:
+                    base_T_flange1 = frame['transform_matrix']
+                elif number == 23:
+                    base_T_flange2 = frame['transform_matrix']
+                elif number == 33:
+                    base_T_flange3 = frame['transform_matrix']
+            else:
+                raise ValueError('no match found')
+
+        # the json file has already transformation from cam to base
+        if os.path.isfile(transformation_path):
+            data  = read_tranformation(transformation_path)
+        else:
+            data  = read_tranformation('../camera/transform.yaml')
+        # colmap is in their paper world, world is in their paper robot base
+        flange_T_cam = data['cam2flange']
+        base_T_cam0 = np.matmul(base_T_flange0, flange_T_cam)
+        base_T_cam1 = np.matmul(base_T_flange1, flange_T_cam)
+        base_T_cam2 = np.matmul(base_T_flange2, flange_T_cam)
+        base_T_cam3 = np.matmul(base_T_flange3, flange_T_cam)
 
     extrinsics = np.stack([base_T_cam0, base_T_cam1, base_T_cam2, base_T_cam3], axis=0)
 
@@ -308,7 +333,9 @@ def line_dist(points:torch.tensor, line:torch.tensor)->torch.tensor:
         dist = np.matmul(points, line[:-1].reshape(3, 1)) + line[-1]
         return dist.squeeze()
 
-def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, name = 'mm', prune_method='sam', key:int=0, verbose:bool=True, samckp_path:str='./thirdparty_module/sam_vit_h_4b8939.pth')->(np.ndarray, np.ndarray, np.ndarray):
+def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, name = 'mm',
+             prune_method='sam', key:int=0, verbose:bool=True, visualize:bool=True,
+             samckp_path:str='./thirdparty_module/sam_vit_h_4b8939.pth')->(np.ndarray, np.ndarray, np.ndarray):
     """
     the pipeline of the data loading/capturing then processing
 
@@ -331,10 +358,16 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     """
     ### get extrinsics(world2cam) and world2base
-    extrinsics = get_extrinsics_from_json(extrinsics_path)
+    extracted_list = [3,13,23,33]
+    # extracted_list = [5,15,25,35] bad
+    # extracted_list = [1,2,3,4] very bad
+    extrinsics = get_extrinsics_from_json(extrinsics_path, extracted_list)
     if data_path:
         # load images
-        colors_distort, depths_distort, distortion, intrinsics = load_cddi(data_path)
+        # bug in the collected demo that image is matched to previous pose
+        extracted_list = np.array(extracted_list) + 1
+        extracted_list = extracted_list.tolist()
+        colors_distort, depths_distort, distortion, intrinsics = load_cddi(data_path, extracted_list)
         colors, depths = undistort(colors_distort, depths_distort ,intrinsics, distortion)
     else:
         from .capture_3d import capture_auto
@@ -344,7 +377,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
     colors_pile = colors[..., (2, 1, 0)]
     depths[depths < 0] = 0
     # points_undistort = depth2pt_K_numpy(depths, intrinsics, np.linalg.inv(extrinsics), xyz_images=True)
-    points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics)
+    points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics,visualize=visualize)
     detector = Sam_Detector(sam_checkpoint=samckp_path)
     points_ls = []
     features_ls = []
@@ -361,7 +394,9 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             posi_num = 4
             posi_index = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[20, 1200])
             posi_select_id = np.random.choice(len(posi_index[0]), posi_num // 2)
-            posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[5, 20])
+            # posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[5, 20])
+            posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[20, 1200])
+
             posi_select_id_ = np.random.choice(len(posi_index_[0]), posi_num // 2)
 
 

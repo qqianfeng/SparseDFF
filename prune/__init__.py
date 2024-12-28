@@ -12,12 +12,14 @@ from refinement.model import LinearProbe, LinearProbe_Thick, LinearProbe_Juicy, 
 def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True,
                                   key=0, name='bear', device='cuda', scale=6,
                                    method='binearest-match', dis_threshold=0.1,
-                                   quotient_threshold=0.8, verbose=False, model_path=None,
+                                   quotient_threshold=0.8, verbose=False, model_path=None,visualize=True,
                                    p0 = 'pyhsics', p1= 'pyhsics'):
     if key == 0:
-        points, features, colors, batch_sign, raw_points= pipeline(path, extrinsics_path, save=save, scale=scale, name = name, prune_method=p0, key=0, verbose=verbose)
+        points, features, colors, batch_sign, raw_points= pipeline(path, extrinsics_path, save=save, scale=scale,
+                                                                   name = name, prune_method=p0, key=0, verbose=verbose,visualize=visualize)
     elif key == 1:
-        points, features, colors, batch_sign, raw_points= pipeline(path, extrinsics_path, save=save, scale=scale, name = name, prune_method=p1, key=1, verbose=verbose)
+        points, features, colors, batch_sign, raw_points= pipeline(path, extrinsics_path, save=save, scale=scale,
+                                                                   name = name, prune_method=p1, key=1, verbose=verbose,visualize=visualize)
     points_ref, _ = prune_box(raw_points, x=[-0.42, 0.48], y=[-0.56, 0.56], z=[-0.135, 0.8])
 
     img_num = points.shape[0]

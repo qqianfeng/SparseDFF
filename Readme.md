@@ -187,3 +187,16 @@ python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 [] 5. import collected grasp pose
 
 transforms.json from demo collection has different intrinsics
+
+## realsense config read from rs sdk
+30 : Color #0 (Video Stream: BGR8 1280x720@ 30Hz)
+ Principal Point         : 644.606, 374.202
+ Focal Length            : 907.749, 907.392
+ Distortion Model        : Inverse Brown Conrady
+ Distortion Coefficients : [0,0,0,0,0]
+40 : Infrared #2 (Video Stream: Y8 1280x720@ 30Hz)
+ rbg2depth
+ Translation Vector : [0.0646403,-0.000253027,0.000721927]
+ Rotation Matrix    : [0.999973,0.0044667,-0.00574982]
+                    : [-0.00448357,0.999986,-0.00292512]
+                    : [0.00573667,0.00295083,0.999979]

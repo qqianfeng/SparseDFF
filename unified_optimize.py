@@ -64,12 +64,14 @@ class home_made_feature_interpolator:
             raise ValueError('nan in interpolated_features')
 
         return interpolated_features.reshape(b, n, -1)
+
 class Dino_Processor:
-    def __init__(self, conf, name, mode) -> None:
+    def __init__(self, conf, name, mode, visualize) -> None:
         self.conf = conf
         seed = conf.seed
         self.name = name
         self.mode = mode
+        self.visualize = visualize
         np.random.seed(seed)
         random.seed(seed)
         torch.random.manual_seed(seed)
@@ -83,12 +85,14 @@ class Dino_Processor:
                                                             extrinsics_path=conf.extrinsics_path, key=0,
                                                             dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method,verbose=conf.verbose, model_path=conf.model_path,
+                                                            visualize=visualize,
                                                             scale=conf.scale, name=self.name, p0=conf.img_preprocess[0])
         # test data
         points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2,
                                                                extrinsics_path=conf.extrinsics_path, key=1,
                                                                dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                                method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
+                                                               visualize=visualize,
                                                                scale=conf.scale, name=self.name, p1=conf.img_preprocess[1])
 
         self.points1, self.features1 = points1.cpu().numpy(), features1.cpu().numpy()
@@ -142,7 +146,7 @@ if __name__ == '__main__':
     #     display.start()
     #     pyglet.options['shadow_window'] = False
     #     pyglet.options['display'] = display.display
-    dino_processor = Dino_Processor(conf, args.name, conf.mode)
+    dino_processor = Dino_Processor(conf, args.name, conf.mode, conf.visualize)
     dino_processor.process()
     end_time = time.time()
     print('Whole Time: ', end_time - start_time)
