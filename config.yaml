@@ -11,8 +11,8 @@ data2: ./example_data/img/20231010_monkey_test # test
 hand_ref_pose_name: monkey # the ref pose is ./camera/hand_arm/ref_pose_{}.npy
 model_path: ./example_data/pth/glayer_key0_pie_64_T0.007_20000.pth
 img_preprocess:
-  - sam
-  - sam
+  - physics #sam
+  - physics #sam
 scale: 14
 dis_threshold: 0.1
 quotient_threshold: 0.8

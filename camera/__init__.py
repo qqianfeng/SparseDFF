@@ -76,7 +76,6 @@ def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.nda
         color = colors[i]
         depth = depths[i]
         color_o3d = o3d.geometry.Image(np.ascontiguousarray(color))
-
         depth_o3d = o3d.geometry.Image(depth)
         rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
             color_o3d, depth_o3d, depth_scale=1000.0, depth_trunc=1.5, convert_rgb_to_intensity=False
@@ -100,6 +99,54 @@ def depth2pt_K_o3d(depths:np.ndarray, colors:np.ndarray, K:np.ndarray , R:np.nda
         o3d.visualization.draw_geometries(vis_pcd_list)
 
     return points
+
+def depth2pt_K_numpy_new(depths:np.ndarray, K:np.ndarray , R:np.ndarray, visualize=False)->np.ndarray:
+    batch_size, height, width = depths.shape
+
+    # Create a grid of pixel coordinates
+    u, v = np.meshgrid(np.arange(width), np.arange(height))
+    u = u.flatten()
+    v = v.flatten()
+    points_return = []
+
+    # Flatten depth image
+    for i, depth in enumerate(depths):
+        z = depth.flatten()/1000.
+
+        # Filter out points with zero depth
+        valid = z >= 0
+        u, v, z = u[valid], v[valid], z[valid]
+
+        # Convert pixel coordinates to normalized coordinates
+        fx = K[0, 0, 0]
+        fy = K[0, 1, 1]
+        cx, cy = K[0,0, 2], K[0,1, 2]
+        x = (u - cx) / fx
+        y = (v - cy) / fy
+
+        # Convert to 3D points
+        x *= z
+        y *= z
+        points_tmp = np.stack((x, y, z), axis=-1)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points_tmp)
+        pcd.transform(R[i])
+        points_tmp = np.array(pcd.points)
+
+        # scale 1000 to meter
+        points_return.append(points_tmp.reshape(height,width,3) * 1000)
+        # for visualization
+        if 'points' in locals():
+            points = np.concatenate((points,points_tmp), axis=0)
+        else:
+            points = points_tmp
+    if visualize:
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1,origin=[0, 0, 0])
+        o3d.visualization.draw_geometries([pcd,origin_frame])
+
+    return points_return
 
 def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=True)->np.ndarray:
     """
@@ -146,8 +193,15 @@ def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=
     homogenerous = np.ones((batch_size, h, w))
     xyz_img = np.stack([x_e, y_e, z_e, homogenerous], axis=-1)  # Shape: [n, H, W, 4]
     ### (n, 4, 4) * (n, h, w, 4) --> (n, h, w, 4)
-    # xyz_img_trans = np.stack([np.matmul(R[i], xyz_img[i].reshape(-1, 4).T).T.reshape(h, w, 4) for i in range(R.shape[0])], axis=0)
-    xyz_img_trans = np.matmul(R, xyz_img.reshape(xyz_img.shape[0], -1, 4).transpose(0, 2, 1)).transpose(0, 2, 1).reshape(batch_size, h, w, 4)
+    xyz_img_trans = np.stack([np.matmul(R[i], xyz_img[i].reshape(-1, 4).T).T.reshape(h, w, 4) for i in range(R.shape[0])], axis=0)
+    # xyz_img_trans = np.matmul(R, xyz_img.reshape(xyz_img.shape[0], -1, 4).transpose(0, 2, 1)).transpose(0, 2, 1).reshape(batch_size, h, w, 4)
+
+    pcd = o3d.geometry.PointCloud()
+    vis_pcd = xyz_img_trans[0,:,: :3].reshape(-1,3)
+    pcd.points = o3d.utility.Vector3dVector(vis_pcd)
+    origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=100,origin=[0, 0, 0])
+    o3d.visualization.draw_geometries([pcd,origin_frame])
+
     if xyz_images:
         return xyz_img_trans[..., :3]
     else:
@@ -360,7 +414,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
     ### get extrinsics(world2cam) and world2base
     extracted_list = [3,13,23,33]
     # extracted_list = [5,15,25,35] bad
-    # extracted_list = [1,2,3,4] very bad
+    # extracted_list = [23,24,25,26] # very bad
     extrinsics = get_extrinsics_from_json(extrinsics_path, extracted_list)
     if data_path:
         # load images
@@ -376,8 +430,8 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     colors_pile = colors[..., (2, 1, 0)]
     depths[depths < 0] = 0
-    # points_undistort = depth2pt_K_numpy(depths, intrinsics, np.linalg.inv(extrinsics), xyz_images=True)
-    points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics,visualize=visualize)
+    points_undistort = depth2pt_K_numpy_new(depths, intrinsics, extrinsics, xyz_images=True)
+    # points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics,visualize=visualize)
     detector = Sam_Detector(sam_checkpoint=samckp_path)
     points_ls = []
     features_ls = []
@@ -385,17 +439,21 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
     colors_ls = []
     ### attention! the unit now is mm
     for idx, _ in enumerate(points_undistort):
-        points = points_undistort[idx]
+        points = points_undistort[idx] # 720,1280,3
         colors = colors_pile[idx]
         depth = depths[idx]
 
         if prune_method == 'sam':
+            # points x axis is -178 ~ 2000
+            # points y axis is -1011 ~ 570
+            # points z axis is -1935 ~ 495
+
             # TODO: tune the crop bbox here
             posi_num = 4
-            posi_index = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[20, 1200])
+            posi_index = get_index_from_range(points, x=[-200, 1000], y = [-500, 200], z=[-1000, 500])
             posi_select_id = np.random.choice(len(posi_index[0]), posi_num // 2)
             # posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[5, 20])
-            posi_index_ = get_index_from_range(points, x=[-200, 200], y = [-200, 200], z=[20, 1200])
+            posi_index_ = get_index_from_range(points, x=[-200, 1000], y = [-500, 200], z=[-1000, 500])
 
             posi_select_id_ = np.random.choice(len(posi_index_[0]), posi_num // 2)
 
@@ -406,9 +464,11 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
             neg_num = 2
             if key == 0:
-                neg_index = get_index_from_range(points, x=[-400, 400], y = [370, 460], z=[-10, 20])
+                # neg_index = get_index_from_range(points, x=[-400, 400], y = [370, 460], z=[-10, 20])
+                neg_index = get_index_from_range(points,  x=[-200, 1000], y = [-500, 200], z=[-1000, 500])
+
                 if neg_index[0].shape[0] < neg_num:
-                    neg_index = get_index_from_range(points, x=[-400, 400], y = [- 370, - 460], z=[-150, 900])
+                    neg_index = get_index_from_range(points,  x=[-200, 1000], y = [-500, 200], z=[-1000, 500])
             elif key == 1:
                 neg_index = get_index_from_range(points, x=[-400, 400], y = [370, 460], z=[-10, 90])
                 if neg_index[0].shape[0] < neg_num:
@@ -418,7 +478,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             neg_select_id = np.random.choice(len(neg_index[0]), neg_num)
             neg_index = np.array([[neg_index[1][i], neg_index[0][i]] for i in neg_select_id])
 
-            ref_points = np.concatenate([posi_index, neg_index], axis=0)
+            ref_points = np.concatenate([posi_index, neg_index], axis=0)  # [6,2]
             labels = np.array([1, 0]).repeat([posi_num, neg_num])
             if verbose:
                 print('Color size:', colors.shape)
@@ -429,8 +489,9 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             mask_physics = get_index_from_range(points, return_mask=True)
             mask = mask_sam & mask_physics
             index = np.nonzero(mask)
+
         elif prune_method == 'physics':
-            mask_physics = get_index_from_range(points, x=[-455, 455], y=[-545, 545], z=[-200, 800],return_mask = True)
+            mask_physics = get_index_from_range(points, x=[100, 455], y=[-400, 0], z=[10, 500],return_mask = True)
             mask = (depth!=0) & mask_physics
             index = np.nonzero(mask)
             if save:
@@ -485,6 +546,11 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             masked_points = masked_points[index_prune_plane]
             masked_colors = masked_colors[index_prune_plane]
             batch_sign = batch_sign[index_prune_plane]
+            
+            print('print segmented point cloud')
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(masked_points)
+            o3d.visualization.draw_geometries([pcd])
 
         batch_sign_ls.append(batch_sign)
         points_ls.append(masked_points)
