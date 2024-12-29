@@ -4,6 +4,7 @@ import numpy as np
 import trimesh
 import copy
 import plotly.graph_objects as go
+import json
 
 import open3d as o3d
 from optimize.hand_model import HandModelMJCF
@@ -11,7 +12,7 @@ from optimize.gripper_model import GripperModel
 from scipy.spatial.transform import Rotation
 import yaml
 from matplotlib import cm
-from optimize.hand_model import robust_compute_rotation_matrix_from_ortho6d
+from optimize.hand_model import robust_compute_rotation_matrix_from_ortho6d, quaternion_to_ortho6d
 
 def read_tranformation(data_path:str='./camera/transform.yaml'):
     with open(data_path, 'r') as f:
@@ -123,7 +124,7 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
     return scene
 
 class Hand_AlignmentCheck:
-    def __init__(self, interpolator1, interpolator2, pcd1, pcd2,
+    def __init__(self, conf, interpolator1, interpolator2, pcd1, pcd2,
                  color_ref1:np.ndarray=None, color_ref2:np.ndarray=None,
                  points_vis1:np.ndarray=None, points_vis2:np.ndarray=None,
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
@@ -132,6 +133,7 @@ class Hand_AlignmentCheck:
                  trimesh_viz=False, hand_file = "./mjcf/hithand_mojuco.xml",
                  tip_aug=None, name=None):
         ### load the model and set the params
+        self.conf = conf
         self.interpolator1, self.interpolator2 = interpolator1, interpolator2
         self.opt_iterations = opt_iterations
         self.viz = trimesh_viz
@@ -154,24 +156,44 @@ class Hand_AlignmentCheck:
             self.dev = torch.device('cpu')
         ### load the hand_model
         self.hand = HandModelMJCF(hand_file, "mjcf/meshes", n_surface_points=self.n_opt_pts, device=self.dev, tip_aug=tip_aug, ref_points=torch.from_numpy(points_vis2))
+        self.get_hand_gt_pose()
 
         self.loss_fn = torch.nn.L1Loss()
+
+    def get_hand_gt_pose(self):
+        """
+        original paper is one shot so only one grasp
+        new method takes a list of grasps, saved to a dictionary.
+        """
+        self.hand_gt_poses = []
+        for file in os.listdir(self.conf.data1):
+            if file[:5] == 'scene':
+                grasp_path = os.path.join(self.conf.data1,file)
+                with open(grasp_path, 'r') as f:
+                    grasps_tmp = json.load(f)
+                for i,_ in enumerate(grasps_tmp['demo_labels']):
+                    grasp_tmp = {}
+                    grasp_tmp['task'] = grasps_tmp['task']
+                    grasp_tmp['demo_label'] = grasps_tmp['demo_labels'][i]
+                    demo_pose = grasps_tmp['demo_poses'][i]
+                    arm_pose_trasl = demo_pose['translation']
+                    arm_pose_rot = quaternion_to_ortho6d(demo_pose['quat_xyzw']).tolist()
+                    join_stats = [item for sublist in demo_pose['joint_state'] for item in sublist]
+                    torque_states = [item for sublist in demo_pose['torque_state'] for item in sublist]
+                    grasp_tmp['demo_pose'] = arm_pose_trasl + arm_pose_rot + join_stats
+                    grasp_tmp['torque_states'] = torque_states
+                    self.hand_gt_poses.append(grasp_tmp)
+
 
     ###### can sample some pt from the reference frame and then return the best corresponding points in the test frame
     def sample_pts(self, name='monkey'):
         # hand_gt_pose = np.load(f'./camera/hand_arm/arm_{name}.npy')
-        arm_pose_trasl = np.array([0,0,0])
-        arm_pose_rot = np.array([-0.45260642,  0.08248845,  0.37683634, -1.34357664, -1.21226209,1.2337978 ])
-        hand_pose = np.array([ 0.00000000e+00,  0.00000000e+00, -1.51528783e-01,  0.00000000e+00,
-        8.95708154e-01,  8.95708154e-01, -8.84832114e-02,  1.44736418e-01,
-        7.89267820e-01,  7.89267820e-01,  1.34709520e-01,  1.36436849e-02,
-        8.19381827e-01,  8.19381827e-01,  9.25745472e-02, -1.59699768e-01,
-        4.12718615e-20,  7.50248799e-01,  7.50248799e-01,  4.23467395e-01,
-        7.37880718e-01,  7.14003058e-02]) #,  2.32554029e-02,  2.09220024e-01])
-        hand_gt_pose = np.concatenate((arm_pose_trasl, arm_pose_rot,hand_pose))
-        hand_gt_pose = np.expand_dims(hand_gt_pose,axis=0)
-        hand_gt_pose = torch.from_numpy(hand_gt_pose).float().to(self.dev)
-        self.hand.set_parameters(hand_gt_pose, retarget=False, robust=True)
+        for hand_gt_pose in self.hand_gt_poses:
+            hand_gt_pose = np.array(hand_gt_pose['demo_pose'])
+
+            hand_gt_pose = np.expand_dims(hand_gt_pose,axis=0)
+            hand_gt_pose = torch.from_numpy(hand_gt_pose).float().to(self.dev)
+            self.hand.set_parameters(hand_gt_pose, retarget=False, robust=True)
 
 
         vquery_mesh = self.hand.get_trimesh_data(0)

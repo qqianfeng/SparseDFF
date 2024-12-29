@@ -89,11 +89,11 @@ class Dino_Processor:
                                                             scale=conf.scale, name=self.name, p0=conf.img_preprocess[0])
         # test data
         points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2,
-                                                               extrinsics_path=conf.extrinsics_path, key=1,
-                                                               dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
-                                                               method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
-                                                               visualize=visualize,
-                                                               scale=conf.scale, name=self.name, p1=conf.img_preprocess[1])
+                                                            extrinsics_path=conf.extrinsics_path, key=1,
+                                                            dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
+                                                            method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
+                                                            visualize=visualize,
+                                                            scale=conf.scale, name=self.name, p1=conf.img_preprocess[1])
 
         self.points1, self.features1 = points1.cpu().numpy(), features1.cpu().numpy()
         self.points2, self.features2 = points2.cpu().numpy(), features2.cpu().numpy()
@@ -109,7 +109,7 @@ class Dino_Processor:
     def process(self):
 
         if self.mode == 'hand':
-            alignment = Hand_AlignmentCheck(self.interpolator1, self.interpolator2, self.points1, self.points2,
+            alignment = Hand_AlignmentCheck(self.conf, self.interpolator1, self.interpolator2, self.points1, self.points2,
                                                 self.color_ref1, self.color_ref2,
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,

@@ -15,6 +15,28 @@ import numpy as np
 # from torchsdf import index_vertices_by_faces, compute_sdf
 from scipy.spatial.transform import Rotation
 
+def quaternion_to_ortho6d(quaternion):
+    """
+    Converts a quaternion to an Ortho6D representation.
+
+    Parameters:
+        quaternion (list or np.array): A quaternion [x, y, z, w].
+
+    Returns:
+        np.array: A 6D representation (Ortho6D).
+    """
+    # Ensure quaternion is normalized
+    quaternion = np.array(quaternion)
+    quaternion /= np.linalg.norm(quaternion)
+
+    # Convert quaternion to a rotation matrix
+    rotation_matrix = Rotation.from_quat(quaternion).as_matrix()
+
+    # Take the first two columns of the rotation matrix as Ortho6D
+    ortho6d = np.concatenate([rotation_matrix[:, 0], rotation_matrix[:, 1]])
+
+    return ortho6d
+
 def robust_compute_rotation_matrix_from_ortho6d(poses):
     """
     Instead of making 2nd vector orthogonal to first
@@ -326,10 +348,11 @@ class HandModelMJCF:
         else:
             print('########################')
             temp = hand_pose[:, 9:]
-            temp[:, 8] = - temp[:, 8]
-            temp[:, 20] = - temp[:, 20]
-            temp[:, 21] = - temp[:, 21]
-            temp[:, 19] = - temp[:, 19]
+            # why?
+            # temp[:, 8] = - temp[:, 8]
+            # temp[:, 20] = - temp[:, 20]
+            # temp[:, 21] = - temp[:, 21]
+            # temp[:, 19] = - temp[:, 19]
 
         if self.hand_pose.requires_grad:
             self.hand_pose.retain_grad()

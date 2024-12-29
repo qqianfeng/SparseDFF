@@ -143,8 +143,9 @@ def depth2pt_K_numpy_new(depths:np.ndarray, K:np.ndarray , R:np.ndarray, visuali
     if visualize:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
-        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1,origin=[0, 0, 0])
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1,origin=[0, 0, 0])
         o3d.visualization.draw_geometries([pcd,origin_frame])
+        o3d.io.write_point_cloud('segmented.pcd', pcd)
 
     return points_return
 
@@ -196,11 +197,11 @@ def depth2pt_K_numpy(depths:np.ndarray, K:np.ndarray , R:np.ndarray, xyz_images=
     xyz_img_trans = np.stack([np.matmul(R[i], xyz_img[i].reshape(-1, 4).T).T.reshape(h, w, 4) for i in range(R.shape[0])], axis=0)
     # xyz_img_trans = np.matmul(R, xyz_img.reshape(xyz_img.shape[0], -1, 4).transpose(0, 2, 1)).transpose(0, 2, 1).reshape(batch_size, h, w, 4)
 
-    pcd = o3d.geometry.PointCloud()
-    vis_pcd = xyz_img_trans[0,:,: :3].reshape(-1,3)
-    pcd.points = o3d.utility.Vector3dVector(vis_pcd)
-    origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=100,origin=[0, 0, 0])
-    o3d.visualization.draw_geometries([pcd,origin_frame])
+    # pcd = o3d.geometry.PointCloud()
+    # vis_pcd = xyz_img_trans[0,:,: :3].reshape(-1,3)
+    # pcd.points = o3d.utility.Vector3dVector(vis_pcd)
+    # origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=100,origin=[0, 0, 0])
+    # o3d.visualization.draw_geometries([pcd,origin_frame])
 
     if xyz_images:
         return xyz_img_trans[..., :3]
@@ -430,7 +431,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     colors_pile = colors[..., (2, 1, 0)]
     depths[depths < 0] = 0
-    points_undistort = depth2pt_K_numpy_new(depths, intrinsics, extrinsics, xyz_images=True)
+    points_undistort = depth2pt_K_numpy_new(depths, intrinsics, extrinsics, visualize=True)
     # points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics,visualize=visualize)
     detector = Sam_Detector(sam_checkpoint=samckp_path)
     points_ls = []
@@ -491,7 +492,8 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             index = np.nonzero(mask)
 
         elif prune_method == 'physics':
-            mask_physics = get_index_from_range(points, x=[100, 455], y=[-400, 0], z=[10, 500],return_mask = True)
+            # x=[100, 500], y=[-1000, 0], z=[100, 500] img_1734784913.2326946
+            mask_physics = get_index_from_range(points, x=[100, 455], y=[-400, 0], z=[10, 200],return_mask = True)
             mask = (depth!=0) & mask_physics
             index = np.nonzero(mask)
             if save:
@@ -546,11 +548,13 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
             masked_points = masked_points[index_prune_plane]
             masked_colors = masked_colors[index_prune_plane]
             batch_sign = batch_sign[index_prune_plane]
-            
-            print('print segmented point cloud')
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(masked_points)
-            o3d.visualization.draw_geometries([pcd])
+
+            if visualize:
+                print('print segmented point cloud')
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(masked_points)
+                o3d.visualization.draw_geometries([pcd])
+                o3d.io.write_point_cloud('segmented.pcd', pcd)
 
         batch_sign_ls.append(batch_sign)
         points_ls.append(masked_points)
@@ -562,6 +566,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
     batch_sign = torch.from_numpy(np.concatenate(batch_sign_ls, axis=0))
     colors = np.concatenate(colors_ls, axis=0)
 
+    points_undistort = np.concatenate(points_undistort, axis=0).astype('float32')
     return points, features, colors, batch_sign, points_undistort.reshape(-1, 3) / 1000.
 
 
