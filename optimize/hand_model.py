@@ -343,26 +343,32 @@ class HandModelMJCF:
         # 'robot0:LFJ0', 'robot0:THJ4', 'robot0:THJ3', 'robot0:THJ2',
         # 'robot0:THJ1', 'robot0:THJ0']
         self.hand_pose = hand_pose
-        if retarget:
-            temp = self.project_to_range(hand_pose[:, 9:])
-        else:
-            print('########################')
-            temp = hand_pose[:, 9:]
-            # why?
-            # temp[:, 8] = - temp[:, 8]
-            # temp[:, 20] = - temp[:, 20]
-            # temp[:, 21] = - temp[:, 21]
-            # temp[:, 19] = - temp[:, 19]
-
         if self.hand_pose.requires_grad:
             self.hand_pose.retain_grad()
         self.global_translation = self.hand_pose[:, 0:3]
-        if robust:
-            self.global_rotation = robust_compute_rotation_matrix_from_ortho6d(
-                self.hand_pose[:, 3:9])
-        else:
-            self.global_rotation = rotation_6d_to_matrix_ori(self.hand_pose[:, 3:9])
-        self.current_status = self.chain.forward_kinematics(temp)
+
+        # rotation as orth6d
+        if hand_pose.shape[1] == 29:
+            if retarget:
+                joints = self.project_to_range(hand_pose[:, 9:])
+            else:
+                joints = hand_pose[:, 9:]
+
+            if robust:
+                self.global_rotation = robust_compute_rotation_matrix_from_ortho6d(
+                    self.hand_pose[:, 3:9])
+            else:
+                self.global_rotation = rotation_6d_to_matrix_ori(self.hand_pose[:, 3:9])
+
+        # rotation as rotation matrix
+        elif hand_pose.shape[1] == 32:
+            if retarget:
+                joints = self.project_to_range(hand_pose[:, 12:])
+            else:
+                joints = hand_pose[:, 12:]
+            self.global_rotation = self.hand_pose[:, 3:12].reshape(-1,3,3)
+
+        self.current_status = self.chain.forward_kinematics(joints)
 
 
     def get_trimesh_data(self, i):

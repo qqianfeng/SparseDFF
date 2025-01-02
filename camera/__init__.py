@@ -130,6 +130,7 @@ def depth2pt_K_numpy_new(depths:np.ndarray, K:np.ndarray , R:np.ndarray, visuali
         points_tmp = np.stack((x, y, z), axis=-1)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points_tmp)
+        # apply transformation to convert point cloud from cam frame to base frame
         pcd.transform(R[i])
         points_tmp = np.array(pcd.points)
 
@@ -431,7 +432,7 @@ def pipeline(data_path:str, extrinsics_path:str, scale:int=3, save:bool=True, na
 
     colors_pile = colors[..., (2, 1, 0)]
     depths[depths < 0] = 0
-    points_undistort = depth2pt_K_numpy_new(depths, intrinsics, extrinsics, visualize=True)
+    points_undistort = depth2pt_K_numpy_new(depths, intrinsics, extrinsics, visualize=visualize)
     # points_undistort = depth2pt_K_o3d(depths, colors_pile, intrinsics, extrinsics,visualize=visualize)
     detector = Sam_Detector(sam_checkpoint=samckp_path)
     points_ls = []

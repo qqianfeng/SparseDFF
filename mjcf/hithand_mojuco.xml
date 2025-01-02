@@ -1,7 +1,7 @@
 <mujoco model="hithand">
   <option iterations="50" timestep="0.001" solver="PGS" gravity="0 0 -9.81" />
 
-  <compiler angle="radian" meshdir="./mjcf/meshes/" eulerseq="zyx"/>
+  <compiler angle="radian" meshdir="./mjcf/meshes/" eulerseq="zyx" />
 
   <default>
     <joint limited="true" damping="0.01" armature="0.01" frictionloss="0.01" />
@@ -34,9 +34,9 @@
     <body name="root" pos="0 0 0.01" quat="1 0 0 0">
       <freejoint name="root" />
       <site name="imu" size="0.01" pos="0 0 0" />
-      <geom pos="0 0 0.1" quat="1 0 0 0" type="mesh" mesh="hit-hand-2-palm-right-merged_faces_300_crop" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
-      <geom type="mesh" rgba="" mesh="hit-hand-2-palm-right-merged_faces_300_crop" pos="0 0 0.1" quat="1 0 0 0" />
-      <body name="Right_Thumb_Basecover" pos="0.0621759 0.0443729 0.178735" quat="0.821503 0.199145 -0.481905 0.230741">
+      <geom type="mesh" mesh="hit-hand-2-palm-right-merged_faces_300_crop" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
+      <geom type="mesh" rgba="" mesh="hit-hand-2-palm-right-merged_faces_300_crop" />
+      <body name="Right_Thumb_Basecover" pos="0.0621759 0.0443729 0.0787348" quat="0.821503 0.199145 -0.481905 0.230741">
         <inertial pos="0.02749 0 0" quat="0.690219 0.153618 0.153618 0.690219" mass="0.0176" diaginertia="1.9874e-06 1.43016e-06 9.56744e-07" />
         <joint name="Right_Thumb_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799" damping="0.5" />
         <geom size="0.001 0.0005" type="cylinder" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
@@ -60,7 +60,7 @@
           </body>
         </body>
       </body>
-      <body name="Right_Index_Basecover" pos="-0.00252988 0.0368001 0.207784" quat="0.0308436 0.706434 -0.0308436 0.706434">
+      <body name="Right_Index_Basecover" pos="-0.00252988 0.0368001 0.107784" quat="0.0308436 0.706434 -0.0308436 0.706434">
         <inertial pos="0.02749 0 0" quat="0.690219 0.153618 0.153618 0.690219" mass="0.0176" diaginertia="1.9874e-06 1.43016e-06 9.56744e-07" />
         <joint name="Right_Index_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799" damping="0.5" />
         <geom size="0.001 0.0005" type="cylinder" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
@@ -77,16 +77,16 @@
             <geom type="mesh" rgba="" mesh="hit-hand-2-finger-phamed" />
             <body name="Right_Index_Phadist" pos="0.025 0 0" quat="0.707107 0 0 -0.707107">
               <inertial pos="0.00072 0.00717 0" quat="0.501864 0.497938 -0.499541 0.500648" mass="0.0137" diaginertia="1.57882e-06 1.55191e-06 8.29695e-07" />
-              <joint name="Right_Index_3" pos="0 0 0" axis="0 0 1" range="0 1.13446" damping="0.5" />
+              <joint name="Right_Index_3" pos="0 0 0" axis="0 0 1" range="0 1.13446"  damping="0.5" />
               <geom type="mesh" mesh="hit-hand-2-finger-phadist" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
               <geom type="mesh" rgba="" mesh="hit-hand-2-finger-phadist" />
             </body>
           </body>
         </body>
       </body>
-      <body name="Right_Middle_Basecover" pos="-0.0037 0.01 0.217784" quat="-1.22475e-07 -0.707107 1.22474e-07 -0.707107">
+      <body name="Right_Middle_Basecover" pos="-0.0037 0.01 0.117784" quat="-1.22475e-07 -0.707107 1.22474e-07 -0.707107">
         <inertial pos="0.02749 0 0" quat="0.690219 0.153618 0.153618 0.690219" mass="0.0176" diaginertia="1.9874e-06 1.43016e-06 9.56744e-07" />
-        <joint name="Right_Middle_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799" damping="0.5" />
+        <joint name="Right_Middle_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799"  damping="0.5" />
         <geom size="0.001 0.0005" type="cylinder" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
         <geom type="cylinder" rgba="" />
         <body name="Right_Middle_Phaprox" quat="0.707105 0.707108 0 0">
@@ -108,7 +108,7 @@
           </body>
         </body>
       </body>
-      <body name="Right_Ring_Basecover" pos="0 -0.0168001 0.212584" quat="0.0308436 -0.706434 -0.0308436 -0.706434">
+      <body name="Right_Ring_Basecover" pos="0 -0.0168001 0.112584" quat="0.0308436 -0.706434 -0.0308436 -0.706434">
         <inertial pos="0.02749 0 0" quat="0.690219 0.153618 0.153618 0.690219" mass="0.0176" diaginertia="1.9874e-06 1.43016e-06 9.56744e-07" />
         <joint name="Right_Ring_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799" damping="0.5" />
         <geom size="0.001 0.0005" type="cylinder" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />
@@ -132,7 +132,7 @@
           </body>
         </body>
       </body>
-      <body name="Right_Little_Basecover" pos="0.000971571 -0.0433963 0.193584" quat="0.0616283 -0.704416 -0.0616283 -0.704416">
+      <body name="Right_Little_Basecover" pos="0.000971571 -0.0433963 0.0935835" quat="0.0616283 -0.704416 -0.0616283 -0.704416">
         <inertial pos="0.02749 0 0" quat="0.690219 0.153618 0.153618 0.690219" mass="0.0176" diaginertia="1.9874e-06 1.43016e-06 9.56744e-07" />
         <joint name="Right_Little_0" pos="0 0 0" axis="0 0 1" range="-0.261799 0.261799" damping="0.5" />
         <geom size="0.001 0.0005" type="cylinder" contype="1" conaffinity="0" density="0" group="1" class="visualgeom" />

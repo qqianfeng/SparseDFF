@@ -66,12 +66,14 @@ class home_made_feature_interpolator:
         return interpolated_features.reshape(b, n, -1)
 
 class Dino_Processor:
-    def __init__(self, conf, name, mode, visualize) -> None:
+    def __init__(self, conf, name, mode, visualize_cam, visualize_hand) -> None:
         self.conf = conf
         seed = conf.seed
         self.name = name
         self.mode = mode
-        self.visualize = visualize
+        self.visualize_cam = visualize_cam
+        self.visualize_hand = visualize_hand
+
         np.random.seed(seed)
         random.seed(seed)
         torch.random.manual_seed(seed)
@@ -80,19 +82,19 @@ class Dino_Processor:
         else:
             self.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
-        # demo data
+        # demo data, points in robot base frame
         points1, features1, self.color_ref1, self.points_vis1, self.color_vis1, _ = get_points_features_from_real(path=conf.data1,
                                                             extrinsics_path=conf.extrinsics_path, key=0,
                                                             dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method,verbose=conf.verbose, model_path=conf.model_path,
-                                                            visualize=visualize,
+                                                            visualize=visualize_cam,
                                                             scale=conf.scale, name=self.name, p0=conf.img_preprocess[0])
         # test data
         points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2,
                                                             extrinsics_path=conf.extrinsics_path, key=1,
                                                             dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
-                                                            visualize=visualize,
+                                                            visualize=visualize_cam,
                                                             scale=conf.scale, name=self.name, p1=conf.img_preprocess[1])
 
         self.points1, self.features1 = points1.cpu().numpy(), features1.cpu().numpy()
@@ -114,7 +116,7 @@ class Dino_Processor:
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
                                                 self.points_ref2,
-                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations,
+                                                trimesh_viz=self.conf.visualize_hand, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data1)[-1])
         elif self.mode == 'gripper':
@@ -123,7 +125,7 @@ class Dino_Processor:
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
                                                 self.points_ref2,
-                                                trimesh_viz=self.conf.visualize, opt_iterations=self.conf.alignment.opt_iterations,
+                                                trimesh_viz=self.conf.visualize_hand, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data2)[-1])
         else:
@@ -146,7 +148,7 @@ if __name__ == '__main__':
     #     display.start()
     #     pyglet.options['shadow_window'] = False
     #     pyglet.options['display'] = display.display
-    dino_processor = Dino_Processor(conf, args.name, conf.mode, conf.visualize)
+    dino_processor = Dino_Processor(conf, args.name, conf.mode, conf.visualize_cam, conf.visualize_hand)
     dino_processor.process()
     end_time = time.time()
     print('Whole Time: ', end_time - start_time)

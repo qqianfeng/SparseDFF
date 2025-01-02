@@ -5,6 +5,7 @@ import trimesh
 import copy
 import plotly.graph_objects as go
 import json
+import transforms3d
 
 import open3d as o3d
 from optimize.hand_model import HandModelMJCF
@@ -85,7 +86,33 @@ def read_hand_arm(forder_path:str='./camera/hand_arm', name=None):
         return poses[idx]
     return poses
 
-def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, rand_color=False, show=True, name=None):
+def create_coordinate_frame(scale=1.0, transform=np.eye(4)):
+    # Axes represented as cylinders
+    x_axis = trimesh.creation.cylinder(radius=0.02 * scale, height=scale, sections=20)
+    y_axis = trimesh.creation.cylinder(radius=0.02 * scale, height=scale, sections=20)
+    z_axis = trimesh.creation.cylinder(radius=0.02 * scale, height=scale, sections=20)
+
+    # Rotate and position the axes
+    x_axis.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+    y_axis.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
+    z_axis.apply_translation([0, 0, scale / 2])
+    x_axis.apply_translation([scale / 2, 0, 0])
+    y_axis.apply_translation([0, scale / 2, 0])
+
+    # Color axes: X = red, Y = green, Z = blue
+    x_axis.visual.vertex_colors = [255, 0, 0, 255]  # Red
+    y_axis.visual.vertex_colors = [0, 255, 0, 255]  # Green
+    z_axis.visual.vertex_colors = [0, 0, 255, 255]  # Blue
+
+    # Combine the axes into one scene
+    frame = trimesh.util.concatenate([x_axis, y_axis, z_axis])
+
+    # Translate the frame to the origin
+    frame.apply_transform(transform)
+
+    return frame
+
+def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, rand_color=False, show=True, name=None, grasp_pose=False):
     colormap = cm.get_cmap('brg', len(np_pcd_list))
     colors = [
         (np.asarray(colormap(val)) * 255).astype(np.int32) for val in np.linspace(0.05, 0.95, num=len(np_pcd_list))
@@ -114,6 +141,11 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
     scene = trimesh.Scene()
     scene.add_geometry(tpcd_list)
     scene.add_geometry(mesh_list)
+
+    # add hand grasp pose frame
+    if isinstance(grasp_pose, np.ndarray):
+        frame = create_coordinate_frame(scale=1.0,transform=grasp_pose)
+        scene.add_geometry(frame)
 
     if show:
         scene.show()
@@ -150,6 +182,19 @@ class Hand_AlignmentCheck:
         self.pcd1 = pcd1
         self.pcd2 = pcd2
         self.color_ref1, self.color_ref2 = color_ref1, color_ref2
+
+        self.flange2grasp = np.array([
+            [-1.000, -0.000,  0.000, -0.000],
+            [0.000, -1.000,  0.000, -0.045],
+            [0.000,  0.000,  1.000, -0.170],
+            [0.000,  0.000,  0.000,  1.000],
+            ])
+        self.palm_T_base = np.array([
+            [ 0.26749883,  0.14399234, -0.95273847,  0.02      ],
+            [ 0.        ,  0.98877108,  0.14943813,  0.        ],
+            [ 0.96355819, -0.03997453,  0.26449511,  0.06      ],
+            [ 0.        ,  0.        ,  0.        ,  1.        ]])
+
         if torch.cuda.is_available():
             self.dev = torch.device('cuda:0')
         else:
@@ -177,7 +222,20 @@ class Hand_AlignmentCheck:
                     grasp_tmp['demo_label'] = grasps_tmp['demo_labels'][i]
                     demo_pose = grasps_tmp['demo_poses'][i]
                     arm_pose_trasl = demo_pose['translation']
-                    arm_pose_rot = quaternion_to_ortho6d(demo_pose['quat_xyzw']).tolist()
+
+                    # directly convert quat to matrix
+                    # arm_pose_rot = quaternion_to_ortho6d(demo_pose['quat_xyzw']).tolist()
+                    arm_pose_rot = transforms3d.quaternions.quat2mat(demo_pose['quat_xyzw']).flatten().tolist()
+
+                    # TODO: do we need to revert flange2grasp
+                    # arm_pose_rot = np.array(arm_pose_rot).reshape(3,3)
+                    # arm_pose_trasl = np.array(arm_pose_trasl).reshape(3,1)
+                    # grasp_mat = np.concatenate((arm_pose_rot,arm_pose_trasl),axis=1)
+                    # grasp_mat = np.concatenate((grasp_mat,np.array([0,0,0,1]).reshape(1,4)),axis=0)
+                    # grasp_mat = np.matmul(self.flange2grasp,grasp_mat)
+                    # arm_pose_rot = grasp_mat[:3,:3].flatten().tolist()
+                    # arm_pose_trasl = grasp_mat[:3,-1].flatten().tolist()
+
                     join_stats = [item for sublist in demo_pose['joint_state'] for item in sublist]
                     torque_states = [item for sublist in demo_pose['torque_state'] for item in sublist]
                     grasp_tmp['demo_pose'] = arm_pose_trasl + arm_pose_rot + join_stats
@@ -189,19 +247,26 @@ class Hand_AlignmentCheck:
     def sample_pts(self, name='monkey'):
         # hand_gt_pose = np.load(f'./camera/hand_arm/arm_{name}.npy')
         for hand_gt_pose in self.hand_gt_poses:
+            print(hand_gt_pose['task'])
+            print(hand_gt_pose['demo_label'])
+
             hand_gt_pose = np.array(hand_gt_pose['demo_pose'])
 
             hand_gt_pose = np.expand_dims(hand_gt_pose,axis=0)
             hand_gt_pose = torch.from_numpy(hand_gt_pose).float().to(self.dev)
             self.hand.set_parameters(hand_gt_pose, retarget=False, robust=True)
+            vquery_mesh = self.hand.get_trimesh_data(0)
+            hand_gt:np.ndarray = self.hand.get_surface_points()[0].detach().cpu().numpy()
+            self.hand.save_pose('./data/des_ori.npy', hand_gt_pose, False, False)
 
-
-        vquery_mesh = self.hand.get_trimesh_data(0)
-        hand_gt:np.ndarray = self.hand.get_surface_points()[0].detach().cpu().numpy()
-        self.hand.save_pose('./data/des_ori.npy', hand_gt_pose, False, False)
-        trimesh_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,])
-        reference_query_pts = hand_gt
-        exit()
+            grasp_pose = np.eye(4)
+            transl = hand_gt_pose[:,:3].reshape(3,).cpu().numpy()
+            rot = hand_gt_pose[:,3:12].reshape(3,3).cpu().numpy()
+            grasp_pose[:3,-1] = transl
+            grasp_pose[:3,:3] = rot
+            trimesh_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,],grasp_pose=grasp_pose)
+            reference_query_pts = hand_gt
+            # exit()
 
         reference_model_input = {}
         ref_query_pts = torch.from_numpy(reference_query_pts).float().to(self.dev)

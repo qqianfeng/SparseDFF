@@ -180,7 +180,7 @@ python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 
 [x] 1. './camera/workspace/calibration.json'
 [x] 2. import 4 images/depth
-[] 2.1 fix bug in pcd transform
+[x] 2.1 fix bug in pcd transform
 [] 3. do we need to retrain the alignment network?
 [x] 4. convert hithand urdf to mjcf from
    https://docs.kscale.dev/utils/urdf2mjcf

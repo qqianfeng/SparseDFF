@@ -1,6 +1,7 @@
 seed: 1
 device: null
-visualize: false # visualize results using trimesh
+visualize_cam: false # visualize results using trimesh
+visualize_hand: true
 verbose: false
 # bad alignment
 # img_1734624999.0027404, img_1734700338.7743263 img_1734702063.6957574 img_1734707072.40529
