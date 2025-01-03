@@ -6,8 +6,9 @@ import copy
 import plotly.graph_objects as go
 import json
 import transforms3d
-
+from copy import deepcopy
 import open3d as o3d
+
 from optimize.hand_model import HandModelMJCF
 from optimize.gripper_model import GripperModel
 from scipy.spatial.transform import Rotation
@@ -137,15 +138,16 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
 
         tpcd_list.append(tpcd)
 
-
     scene = trimesh.Scene()
     scene.add_geometry(tpcd_list)
     scene.add_geometry(mesh_list)
 
     # add hand grasp pose frame
     if isinstance(grasp_pose, np.ndarray):
-        frame = create_coordinate_frame(scale=1.0,transform=grasp_pose)
+        frame = create_coordinate_frame(scale=0.1,transform=grasp_pose)
+        frame2 = create_coordinate_frame(scale=0.1)
         scene.add_geometry(frame)
+        scene.add_geometry(frame2)
 
     if show:
         scene.show()
@@ -153,6 +155,53 @@ def trimesh_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, r
         img = scene.save_image((480, 480))
         with open('./data/result.png', 'wb') as f:
             f.write(img)
+    return scene
+
+def open3d_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, rand_color=False, show=True, name=None, grasp_pose=False):
+    colormap = cm.get_cmap('brg', len(np_pcd_list))
+    colors = [
+        (np.asarray(colormap(val)) * 255).astype(np.int32) for val in np.linspace(0.05, 0.95, num=len(np_pcd_list))
+    ]
+    if color_list is None:
+        if rand_color:
+            color_list = []
+            for i in range(len(np_pcd_list)):
+                color_list.append((np.random.rand(3) * 255).astype(np.int32).tolist() + [255])
+        else:
+            color_list = colors
+
+    tpcd_list = []
+    for i, np_pcd in enumerate(np_pcd_list):
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(np_pcd)
+        np_colors = np.tile([0,0,100], (np_pcd.shape[0], 1))
+        pcd.colors = o3d.utility.Vector3dVector(np_colors)
+        # if color_add_list is not None:
+        #     if i == 0:
+        #         pcd.colors = color_add_list[0]
+        #     elif i == 2:
+        #         pcd.colors = color_add_list[1]
+
+        tpcd_list.append(pcd)
+
+    scene = tpcd_list
+    num_points = 1000  # Number of points to sample
+    for mesh in mesh_list:
+        point_cloud = mesh.sample(num_points)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(point_cloud)
+        scene.append(pcd)
+
+    # add hand grasp pose frame
+    if isinstance(grasp_pose, np.ndarray):
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1,origin=[0, 0, 0])
+        scene.append(origin_frame)
+        hand_frame = deepcopy(origin_frame).transform(grasp_pose)
+        scene.append(hand_frame)
+
+    if show:
+        o3d.visualization.draw_geometries(scene)
+
     return scene
 
 class Hand_AlignmentCheck:
@@ -195,6 +244,13 @@ class Hand_AlignmentCheck:
             [ 0.96355819, -0.03997453,  0.26449511,  0.06      ],
             [ 0.        ,  0.        ,  0.        ,  1.        ]])
 
+        # from f3mr defined grasp frame to hithand mesh base(wrist) frame
+        self.wrist2grasp = np.array([
+            [-0.000,  1.000, -0.000,  0.045],
+            [1.000,  0.000, -0.000,  0.000],
+            [0.000, -0.000, -1.000,  0.150],
+            [0.000,  0.000,  0.000,  1.000],])
+
         if torch.cuda.is_available():
             self.dev = torch.device('cuda:0')
         else:
@@ -228,13 +284,13 @@ class Hand_AlignmentCheck:
                     arm_pose_rot = transforms3d.quaternions.quat2mat(demo_pose['quat_xyzw']).flatten().tolist()
 
                     # TODO: do we need to revert flange2grasp
-                    # arm_pose_rot = np.array(arm_pose_rot).reshape(3,3)
-                    # arm_pose_trasl = np.array(arm_pose_trasl).reshape(3,1)
-                    # grasp_mat = np.concatenate((arm_pose_rot,arm_pose_trasl),axis=1)
-                    # grasp_mat = np.concatenate((grasp_mat,np.array([0,0,0,1]).reshape(1,4)),axis=0)
-                    # grasp_mat = np.matmul(self.flange2grasp,grasp_mat)
-                    # arm_pose_rot = grasp_mat[:3,:3].flatten().tolist()
-                    # arm_pose_trasl = grasp_mat[:3,-1].flatten().tolist()
+                    arm_pose_rot = np.array(arm_pose_rot).reshape(3,3)
+                    arm_pose_trasl = np.array(arm_pose_trasl).reshape(3,1)
+                    grasp_mat = np.concatenate((arm_pose_rot,arm_pose_trasl),axis=1)
+                    grasp_mat = np.concatenate((grasp_mat,np.array([0,0,0,1]).reshape(1,4)),axis=0)
+                    grasp_mat = np.matmul(grasp_mat, self.wrist2grasp)
+                    arm_pose_rot = grasp_mat[:3,:3].flatten().tolist()
+                    arm_pose_trasl = grasp_mat[:3,-1].flatten().tolist()
 
                     join_stats = [item for sublist in demo_pose['joint_state'] for item in sublist]
                     torque_states = [item for sublist in demo_pose['torque_state'] for item in sublist]
@@ -259,168 +315,170 @@ class Hand_AlignmentCheck:
             hand_gt:np.ndarray = self.hand.get_surface_points()[0].detach().cpu().numpy()
             self.hand.save_pose('./data/des_ori.npy', hand_gt_pose, False, False)
 
+            # TODO: visualized grasp is wrong
             grasp_pose = np.eye(4)
             transl = hand_gt_pose[:,:3].reshape(3,).cpu().numpy()
             rot = hand_gt_pose[:,3:12].reshape(3,3).cpu().numpy()
             grasp_pose[:3,-1] = transl
             grasp_pose[:3,:3] = rot
-            trimesh_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,],grasp_pose=grasp_pose)
+            open3d_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,],grasp_pose=grasp_pose)
+            # trimesh_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,],grasp_pose=grasp_pose)
             reference_query_pts = hand_gt
             # exit()
 
-        reference_model_input = {}
-        ref_query_pts = torch.from_numpy(reference_query_pts).float().to(self.dev)
-        ### the pc of the reference shape
-        reference_model_input['coords'] = ref_query_pts[None, :, :]
-        # get the descriptors for these reference query points
-        reference_act_hat = self.interpolator1.predict(reference_model_input['coords']).detach()
+            reference_model_input = {}
+            ref_query_pts = torch.from_numpy(reference_query_pts).float().to(self.dev)
+            ### the pc of the reference shape
+            reference_model_input['coords'] = ref_query_pts[None, :, :]
+            # get the descriptors for these reference query points
+            reference_act_hat = self.interpolator1.predict(reference_model_input['coords']).detach()
 
-        best_loss = np.inf
-        best_idx = 0
-        M = 10
+            best_loss = np.inf
+            best_idx = 0
+            M = 10
 
-        motion = (torch.rand(M, 31)*0.03).float().to(self.dev)
-        motion[:, 2] = float(self.pcd2[:, 2].max()) + (torch.rand(M)*0.1 + 0.2)[None, :].float().to(self.dev)
-        motion[:, 0:2] = (torch.rand(M, 2)*0.2).float().to(self.dev)
-        motion[:, 3:9] = torch.from_numpy(np.array([0,-1,0,0,0,1])[None, :].repeat(M, axis=0)).to(self.dev)
+            motion = (torch.rand(M, 31)*0.03).float().to(self.dev)
+            motion[:, 2] = float(self.pcd2[:, 2].max()) + (torch.rand(M)*0.1 + 0.2)[None, :].float().to(self.dev)
+            motion[:, 0:2] = (torch.rand(M, 2)*0.2).float().to(self.dev)
+            motion[:, 3:9] = torch.from_numpy(np.array([0,-1,0,0,0,1])[None, :].repeat(M, axis=0)).to(self.dev)
 
-        ori_rotm = torch.from_numpy(np.array([0., 0 ,-1,-1,0,0,0,1,0]).reshape((3,3))).to(self.dev).to(torch.float32)
-        motion.requires_grad_()
-        opt = torch.optim.Adam([motion], lr=1e-2)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)
+            ori_rotm = torch.from_numpy(np.array([0., 0 ,-1,-1,0,0,0,1,0]).reshape((3,3))).to(self.dev).to(torch.float32)
+            motion.requires_grad_()
+            opt = torch.optim.Adam([motion], lr=1e-2)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=self.opt_iterations/ 50, eta_min=1e-4)
 
-        loss_values = []
+            loss_values = []
 
-        # run optimization
-        pcd_traj_list = {}
-        execution_traj_list = {}
-        for i in range(M):
-            pcd_traj_list[i] = []
-            execution_traj_list[i] = []
-        for i in range(self.opt_iterations):
+            # run optimization
+            pcd_traj_list = {}
+            execution_traj_list = {}
+            for i in range(M):
+                pcd_traj_list[i] = []
+                execution_traj_list[i] = []
+            for i in range(self.opt_iterations):
+                self.hand.set_parameters(motion)
+                X_new_ori = self.hand.get_surface_points()
+                # vis_color_pc(X_new_ori[0].detach().cpu().numpy(), None, 0.1 , save=False, rot=ori_rotm.cpu().numpy())
+                # exit()
+                X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale
+                self.perturb_scale *= self.perturb_decay
+
+                ######################### stuff for visualizing the reconstruction ##################33
+
+                motion_save = self.hand.save_pose(path=None, hand_pose=motion)
+                for jj in range(M):
+                    X_np = X_new[jj].detach().cpu().numpy()
+                    centroid = np.mean(X_np, axis=0)
+                    pcd_traj_list[jj].append(centroid)
+                    if len(execution_traj_list[jj]) == 0 or np.linalg.norm((execution_traj_list[jj][-1][:3] - motion[jj].detach().cpu().numpy()[:3])) > 0.01:
+                        execution_traj_list[jj].append(motion_save[jj])
+
+
+                ###############################################################################
+
+                act_hat = self.interpolator2.predict(X_new)
+                t_size = reference_act_hat.size()
+
+
+                losses = [self.loss_fn(act_hat[ii].view(t_size), reference_act_hat) for ii in range(M)]
+                losses = torch.stack(losses)
+
+
+                # distances = self.hand.cal_distance(self.points_ref.expand(M, -1, -1))
+                # distances[distances <= 0] = 0
+                # E_pen = distances.sum(-1)
+                # E_spen = self.hand.self_penetration()
+                # E_joint = self.hand.get_E_joints()
+                # losses += E_pen * 1e-1 + E_spen * 1e-2 + E_joint * 1e-2
+
+                rot_ms = robust_compute_rotation_matrix_from_ortho6d(motion[:, 3:9])
+                rot_ms = rot_ms.reshape((M, 3, 3)).to(torch.float32)
+
+                x_axis_ori_hand = ori_rotm[:, 0][None, ...].repeat(M, 1)
+                y_axis_ori_hand = ori_rotm[:, 1][None, ...].repeat(M, 1)
+                z_axis_ori_hand = ori_rotm[:, 2][None, ...].repeat(M, 1)
+
+                z_axis_object = rot_ms[:, :, 2]
+                z_axis_y = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 0][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 0][None, ...].repeat(M, 1)
+                z_axis_y = z_axis_y / (torch.norm(z_axis_y, dim=1, keepdim=True) + 1e-8)
+
+                roll = torch.arccos(torch.clamp(torch.sum(z_axis_y * z_axis_ori_hand, dim=-1), -1 + 1e-4, 1-1e-4))
+                sign_roll = torch.sign(torch.sum(z_axis_y * y_axis_ori_hand, dim=-1))
+                roll = roll * sign_roll
+
+                roll[roll < np.pi / 6 * 0.8] = 0
+                roll = torch.abs(roll)
+                roll[roll >= np.pi / 6 * 0.8]  -= np.pi / 6 * 0.8
+
+
+                z_axis_x = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 1][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 1][None, ...].repeat(M, 1)
+                z_axis_x = z_axis_x / (torch.norm(z_axis_x, dim=1, keepdim=True) + 1e-8)
+                pitch = torch.arccos(torch.clamp(torch.sum(z_axis_x * z_axis_ori_hand, dim=-1), -1 + 1e-4, 1-1e-4))
+                sign_pitch = torch.sign(torch.sum(z_axis_x * x_axis_ori_hand, dim=-1))
+                pitch = pitch * sign_pitch
+                pitch[pitch.abs() < torch.pi / 6] = 0
+                pitch = torch.abs(pitch)
+                pitch[pitch >= torch.pi / 6] -= torch.pi / 6
+
+                if roll.any():
+                    losses += roll * 1e-1
+                if pitch.any():
+                    losses += pitch * 1e-1
+
+                loss = torch.mean(losses)
+                if i % 100 == 0:
+                    losses_str = ['%f' % val.item() for val in losses]
+                    loss_str = ', '.join(losses_str)
+                    print(f'i: {i}, losses: {loss_str}')
+
+                loss_values.append(loss.item())
+                opt.zero_grad()
+                loss.backward(retain_graph=True)
+                opt.step()
+                if i % 50 == 0:
+                    scheduler.step()
+
+            if self.skip_inverse:
+                rot_sixd = self.hand.save_pose(path=None, hand_pose=motion)[:, 3:9]
+                rot_m = np.eye(3)[None, ...].repeat(M, axis=0)
+                rot_m[:, 0] = rot_sixd[:, 0:3]
+                rot_m[:, 1] = rot_sixd[:, 3:6]
+                rot_m[:, 2] = np.cross(rot_m[:, 0], rot_m[:, 1])
+                rot_zxy = Rotation.from_matrix(rot_m).as_euler('zxy', degrees=False)
+                rot_ini = np.array([ 1.57079633, -1.57079633,  0.        ])[None, :]
+                rot_index = np.abs(rot_zxy - rot_ini) < 0.6
+                min_loss = torch.min(losses[rot_index]).item()
+                best_idx = torch.nonzero(losses == min_loss).squeeze().item()
+            else:
+                best_idx = torch.argmin(losses).item()
+
+            best_loss = losses[best_idx]
+            print('best loss: %f, best_idx: %d' % (best_loss, best_idx))
+
+            best_X = X_new[best_idx].detach().cpu().numpy()
+
+            offset = np.array([0.7, 0, 0])
+            vpcd1 = copy.deepcopy(self.pcd1)
+            vquery1 = copy.deepcopy(reference_query_pts)
             self.hand.set_parameters(motion)
-            X_new_ori = self.hand.get_surface_points()
-            # vis_color_pc(X_new_ori[0].detach().cpu().numpy(), None, 0.1 , save=False, rot=ori_rotm.cpu().numpy())
-            # exit()
-            X_new = X_new_ori + torch.rand_like(X_new_ori) * self.perturb_scale
-            self.perturb_scale *= self.perturb_decay
+            X_mesh = self.hand.get_trimesh_data(best_idx)
 
-            ######################### stuff for visualizing the reconstruction ##################33
+            vpcd1 += offset
+            vquery1 += offset
+            vquery_mesh.apply_translation(offset)
+            self.hand.save_pose('./data/des_final.npy', motion[best_idx][None, ...])
 
-            motion_save = self.hand.save_pose(path=None, hand_pose=motion)
-            for jj in range(M):
-                X_np = X_new[jj].detach().cpu().numpy()
-                centroid = np.mean(X_np, axis=0)
-                pcd_traj_list[jj].append(centroid)
-                if len(execution_traj_list[jj]) == 0 or np.linalg.norm((execution_traj_list[jj][-1][:3] - motion[jj].detach().cpu().numpy()[:3])) > 0.01:
-                    execution_traj_list[jj].append(motion_save[jj])
+            best_execution_traj = np.stack(execution_traj_list[best_idx], axis=0)
+            np.save('./data/execution_traj.npy', best_execution_traj)
+            np.save('./data/pcd_traj.npy', pcd_traj_list[best_idx])
+            np.save('./data/best_X.npy', best_X)
+            vquery_mesh.export('./data/vquery_mesh.stl', file_type='stl')
+            X_mesh.export('./data/X_mesh.stl', file_type='stl')
 
-
-            ###############################################################################
-
-            act_hat = self.interpolator2.predict(X_new)
-            t_size = reference_act_hat.size()
-
-
-            losses = [self.loss_fn(act_hat[ii].view(t_size), reference_act_hat) for ii in range(M)]
-            losses = torch.stack(losses)
-
-
-            # distances = self.hand.cal_distance(self.points_ref.expand(M, -1, -1))
-            # distances[distances <= 0] = 0
-            # E_pen = distances.sum(-1)
-            # E_spen = self.hand.self_penetration()
-            # E_joint = self.hand.get_E_joints()
-            # losses += E_pen * 1e-1 + E_spen * 1e-2 + E_joint * 1e-2
-
-            rot_ms = robust_compute_rotation_matrix_from_ortho6d(motion[:, 3:9])
-            rot_ms = rot_ms.reshape((M, 3, 3)).to(torch.float32)
-
-            x_axis_ori_hand = ori_rotm[:, 0][None, ...].repeat(M, 1)
-            y_axis_ori_hand = ori_rotm[:, 1][None, ...].repeat(M, 1)
-            z_axis_ori_hand = ori_rotm[:, 2][None, ...].repeat(M, 1)
-
-            z_axis_object = rot_ms[:, :, 2]
-            z_axis_y = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 0][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 0][None, ...].repeat(M, 1)
-            z_axis_y = z_axis_y / (torch.norm(z_axis_y, dim=1, keepdim=True) + 1e-8)
-
-            roll = torch.arccos(torch.clamp(torch.sum(z_axis_y * z_axis_ori_hand, dim=-1), -1 + 1e-4, 1-1e-4))
-            sign_roll = torch.sign(torch.sum(z_axis_y * y_axis_ori_hand, dim=-1))
-            roll = roll * sign_roll
-
-            roll[roll < np.pi / 6 * 0.8] = 0
-            roll = torch.abs(roll)
-            roll[roll >= np.pi / 6 * 0.8]  -= np.pi / 6 * 0.8
-
-
-            z_axis_x = z_axis_object - torch.sum(z_axis_object * ori_rotm[:, 1][None, ...].repeat(M, 1), dim=-1, keepdim=True) * ori_rotm[:, 1][None, ...].repeat(M, 1)
-            z_axis_x = z_axis_x / (torch.norm(z_axis_x, dim=1, keepdim=True) + 1e-8)
-            pitch = torch.arccos(torch.clamp(torch.sum(z_axis_x * z_axis_ori_hand, dim=-1), -1 + 1e-4, 1-1e-4))
-            sign_pitch = torch.sign(torch.sum(z_axis_x * x_axis_ori_hand, dim=-1))
-            pitch = pitch * sign_pitch
-            pitch[pitch.abs() < torch.pi / 6] = 0
-            pitch = torch.abs(pitch)
-            pitch[pitch >= torch.pi / 6] -= torch.pi / 6
-
-            if roll.any():
-                losses += roll * 1e-1
-            if pitch.any():
-                losses += pitch * 1e-1
-
-            loss = torch.mean(losses)
-            if i % 100 == 0:
-                losses_str = ['%f' % val.item() for val in losses]
-                loss_str = ', '.join(losses_str)
-                print(f'i: {i}, losses: {loss_str}')
-
-            loss_values.append(loss.item())
-            opt.zero_grad()
-            loss.backward(retain_graph=True)
-            opt.step()
-            if i % 50 == 0:
-                scheduler.step()
-
-        if self.skip_inverse:
-            rot_sixd = self.hand.save_pose(path=None, hand_pose=motion)[:, 3:9]
-            rot_m = np.eye(3)[None, ...].repeat(M, axis=0)
-            rot_m[:, 0] = rot_sixd[:, 0:3]
-            rot_m[:, 1] = rot_sixd[:, 3:6]
-            rot_m[:, 2] = np.cross(rot_m[:, 0], rot_m[:, 1])
-            rot_zxy = Rotation.from_matrix(rot_m).as_euler('zxy', degrees=False)
-            rot_ini = np.array([ 1.57079633, -1.57079633,  0.        ])[None, :]
-            rot_index = np.abs(rot_zxy - rot_ini) < 0.6
-            min_loss = torch.min(losses[rot_index]).item()
-            best_idx = torch.nonzero(losses == min_loss).squeeze().item()
-        else:
-            best_idx = torch.argmin(losses).item()
-
-        best_loss = losses[best_idx]
-        print('best loss: %f, best_idx: %d' % (best_loss, best_idx))
-
-        best_X = X_new[best_idx].detach().cpu().numpy()
-
-        offset = np.array([0.7, 0, 0])
-        vpcd1 = copy.deepcopy(self.pcd1)
-        vquery1 = copy.deepcopy(reference_query_pts)
-        self.hand.set_parameters(motion)
-        X_mesh = self.hand.get_trimesh_data(best_idx)
-
-        vpcd1 += offset
-        vquery1 += offset
-        vquery_mesh.apply_translation(offset)
-        self.hand.save_pose('./data/des_final.npy', motion[best_idx][None, ...])
-
-        best_execution_traj = np.stack(execution_traj_list[best_idx], axis=0)
-        np.save('./data/execution_traj.npy', best_execution_traj)
-        np.save('./data/pcd_traj.npy', pcd_traj_list[best_idx])
-        np.save('./data/best_X.npy', best_X)
-        vquery_mesh.export('./data/vquery_mesh.stl', file_type='stl')
-        X_mesh.export('./data/X_mesh.stl', file_type='stl')
-
-        if self.color_ref1 is not None and self.color_ref2 is not None:
-            trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1, self.color_ref2])
-        else:
-            trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name)
+            if self.color_ref1 is not None and self.color_ref2 is not None:
+                trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1, self.color_ref2])
+            else:
+                trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name)
 
 
 class Gripper_AlignmentCheck:

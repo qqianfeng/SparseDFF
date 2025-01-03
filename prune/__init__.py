@@ -20,7 +20,7 @@ def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True
     elif key == 1:
         points, features, colors, batch_sign, raw_points= pipeline(path, extrinsics_path, save=save, scale=scale,
                                                                    name = name, prune_method=p1, key=1, verbose=verbose,visualize=visualize)
-    points_ref, _ = prune_box(raw_points, x=[-0.42, 0.48], y=[-0.56, 0.56], z=[-0.135, 0.8])
+    points_pruned_all, _ = prune_box(raw_points, x=[-0.42, 0.48], y=[-0.56, 0.56], z=[-0.135, 0.8])
 
     img_num = points.shape[0]
     if method == 'quotient_match':
@@ -52,5 +52,5 @@ def get_points_features_from_real(path=None, extrinsics_path:str=None, save=True
         print('features_select: ', features_select.shape)
         print(f'The whole number of points of object{key}: {points_select.shape[0]}')
 
-    return points_select, features_select, colors_select, points.cpu().numpy(), colors, points_ref
+    return points_select, features_select, colors_select, points.cpu().numpy(), colors, points_pruned_all
 

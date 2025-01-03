@@ -83,7 +83,9 @@ class Dino_Processor:
             self.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
         # demo data, points in robot base frame
-        points1, features1, self.color_ref1, self.points_vis1, self.color_vis1, _ = get_points_features_from_real(path=conf.data1,
+        # points1: filtered points
+        # points_vis1: full points
+        points1, features1, self.color_ref1, self.points_vis1, self.color_vis1, self.points_pruned_all1 = get_points_features_from_real(path=conf.data1,
                                                             extrinsics_path=conf.extrinsics_path, key=0,
                                                             dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method,verbose=conf.verbose, model_path=conf.model_path,
@@ -113,6 +115,7 @@ class Dino_Processor:
         if self.mode == 'hand':
             alignment = Hand_AlignmentCheck(self.conf, self.interpolator1, self.interpolator2, self.points1, self.points2,
                                                 self.color_ref1, self.color_ref2,
+                                                # self.points_pruned_all1, self.points_vis2,
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
                                                 self.points_ref2,
