@@ -92,7 +92,7 @@ class Dino_Processor:
                                                             visualize=visualize_cam,
                                                             scale=conf.scale, name=self.name, p0=conf.img_preprocess[0])
         # test data
-        points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_ref2 = get_points_features_from_real(path=conf.data2,
+        points2, features2, self.color_ref2, self.points_vis2, self.color_vis2, self.points_pruned_all2 = get_points_features_from_real(path=conf.data2,
                                                             extrinsics_path=conf.extrinsics_path, key=1,
                                                             dis_threshold=conf.dis_threshold, quotient_threshold=conf.quotient_threshold,
                                                             method=conf.method, verbose=conf.verbose, model_path=conf.model_path,
@@ -118,7 +118,7 @@ class Dino_Processor:
                                                 # self.points_pruned_all1, self.points_vis2,
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
-                                                self.points_ref2,
+                                                self.points_pruned_all2,
                                                 trimesh_viz=self.conf.visualize_hand, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data1)[-1])
@@ -127,7 +127,7 @@ class Dino_Processor:
                                                 self.color_ref1, self.color_ref2,
                                                 self.points_vis1, self.points_vis2,
                                                 self.color_vis1, self.color_vis2,
-                                                self.points_ref2,
+                                                self.points_pruned_all2,
                                                 trimesh_viz=self.conf.visualize_hand, opt_iterations=self.conf.alignment.opt_iterations,
                                                 opt_nums=self.conf.hand_model.pt_nums, tip_aug=self.conf.hand_model.tip_aug,
                                                 name=os.path.split(self.conf.data2)[-1])

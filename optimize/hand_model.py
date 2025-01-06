@@ -5,14 +5,15 @@ Description: Class HandModelMJCFLite, for visualization only
 """
 
 import os
+import json
+import numpy as np
 import torch
 import pytorch_kinematics as pk
 import trimesh
 import pytorch3d.structures
 import pytorch3d.ops
 import torch.nn.functional as F
-import numpy as np
-# from torchsdf import index_vertices_by_faces, compute_sdf
+from torchsdf import index_vertices_by_faces, compute_sdf
 from scipy.spatial.transform import Rotation
 
 
@@ -65,7 +66,7 @@ def robust_compute_rotation_matrix_from_ortho6d(poses):
     directions equally
     """
     if isinstance(poses, np.ndarray):
-        poses = torch.from_numpy(poses)
+        poses = torch.from_numpy(poses).to('cuda')
 
     ### COOL!!! we can freely update the pose without worrying about the orthogonality
     x_raw = poses[:, 0:3]  # batch*3
@@ -144,7 +145,7 @@ def rotation_6d_to_matrix_ori(d6: torch.Tensor) -> torch.Tensor:
 
 class HandModelMJCF:
     def __init__(self, mjcf_path, mesh_path=None, n_surface_points=2000, device=None,
-                 penetration_points_path='mjcf/shadow_hand_vis.xml',
+                 penetration_points_path='mjcf/penetration_points.json',
                  tip_aug=None, ref_points=None):
         """
 
@@ -177,6 +178,7 @@ class HandModelMJCF:
             self.ref_points = None
         else:
             self.ref_points = ref_points.cpu().numpy()
+        # TODO
         # penetration_points = json.load(open(penetration_points_path, 'r')) if penetration_points_path is not None else None
 
         self.mesh = {}
@@ -198,13 +200,13 @@ class HandModelMJCF:
                     scale = torch.tensor(
                         [1, 1, 1], dtype=torch.float, device=device)
                     ### two kinds of primitives mesh
-                    if visual.geom_type == "box":
-                        link_mesh = trimesh.primitives.Box(
-                            extents=2*visual.geom_param)
-                    elif visual.geom_type == "capsule":
-                        link_mesh = trimesh.primitives.Capsule(
-                            radius=visual.geom_param[0], height=visual.geom_param[1]*2).apply_translation((0, 0, -visual.geom_param[1]))
-                    elif visual.geom_type == "cylinder":
+                    # if visual.geom_type == "box":
+                    #     link_mesh = trimesh.primitives.Box(
+                    #         extents=2*visual.geom_param)
+                    # elif visual.geom_type == "capsule":
+                    #     link_mesh = trimesh.primitives.Capsule(
+                    #         radius=visual.geom_param[0], height=visual.geom_param[1]*2).apply_translation((0, 0, -visual.geom_param[1]))
+                    if visual.geom_type == "cylinder":
                         try:
                             link_mesh = trimesh.primitives.Cylinder(
                                 radius=visual.geom_param[0], height=visual.geom_param[1]*2).apply_translation((0, 0, -visual.geom_param[1]))
@@ -213,18 +215,15 @@ class HandModelMJCF:
                             height_tmp = torch.tensor(0.0005,dtype=torch.float64)
                             link_mesh = trimesh.primitives.Cylinder(
                                 radius=radius_tmp, height=height_tmp*2).apply_translation((0, 0, -height_tmp))
-                    else:
+                    elif visual.geom_type == "mesh":
                     ### one kind of the link_mesh
                         # link_mesh = trimesh.load_mesh(
                         #     os.path.join(mesh_path, visual.geom_param[0].split(":")[1]+".obj"), process=False)
-                        link_mesh = trimesh.load_mesh(
-                            os.path.join(mesh_path, visual.geom_param[0]+".obj"), process=False)
+                        link_mesh = trimesh.load_mesh(os.path.join(mesh_path, visual.geom_param[0]+".obj"), process=False)
                         if visual.geom_param[1] is not None:
                             scale = (visual.geom_param[1]).to(dtype=torch.float, device=device)
-                    vertices = torch.tensor(
-                        link_mesh.vertices, dtype=torch.float, device=device)
-                    faces = torch.tensor(
-                        link_mesh.faces, dtype=torch.float, device=device)
+                    vertices = torch.tensor(link_mesh.vertices, dtype=torch.float, device=device)
+                    faces = torch.tensor(link_mesh.faces, dtype=torch.long, device=device)
                     pos = visual.offset.to(dtype=torch.float, device=device)
                     ### scale the vertices and move it to loc
                     vertices = vertices * scale
@@ -234,13 +233,34 @@ class HandModelMJCF:
                     n_link_vertices += len(vertices)
                 link_vertices = torch.cat(link_vertices, dim=0)
                 link_faces = torch.cat(link_faces, dim=0)
-                self.mesh[body.link.name] = {'vertices': link_vertices,
-                                             'faces': link_faces,
-                                             }
+                # TODO: contact points, penetration_keypoints
+                # contact_candidates = torch.tensor(contact_points[link_name], dtype=torch.float32, device=device).reshape(-1, 3) if contact_points is not None else None
+                # penetration_keypoints = torch.tensor(penetration_points[link_name], dtype=torch.float32, device=device).reshape(-1, 3) if penetration_points is not None else None
+
+                self.mesh[body.link.name] = {
+                    'vertices': link_vertices,
+                    'faces': link_faces,
+                    # 'contact_candidates': contact_candidates,
+                    # 'penetration_keypoints': penetration_keypoints,
+                }
+                # TODO: here we compute mesh for every link, too slow. Try to use primitives for finger links
+                link_face_verts = index_vertices_by_faces(link_vertices, link_faces)
+                self.mesh[link_name]['face_verts'] = link_face_verts
+                # # in dexgraspnet
+                # if link_name in ['robot0:palm', 'robot0:palm_child', 'robot0:lfmetacarpal_child']:
+                # if link_name == 'root':
+                #     link_face_verts = index_vertices_by_faces(link_vertices, link_faces)
+                #     self.mesh[link_name]['face_verts'] = link_face_verts
+                # else:
+                #     self.mesh[link_name]['geom_param'] = body.link.visuals[0].geom_param
+
                 areas[link_name] = trimesh.Trimesh(link_vertices.cpu().numpy(), link_faces.cpu().numpy()).area.item()
             for children in body.children:
                 build_mesh_recurse(children)
         build_mesh_recurse(self.chain._root)
+
+        # set joint limits
+
         self.joints_names = []
         self.joints_lower = []
         self.joints_upper = []
@@ -287,7 +307,16 @@ class HandModelMJCF:
             surface_points.to(dtype=float, device=self.device)
             self.mesh[link_name]['surface_points'] = surface_points
 
+        # indexing
+
         self.link_name_to_link_index = dict(zip([link_name for link_name in self.mesh], range(len(self.mesh))))
+
+        # TODO
+        # self.contact_candidates = [self.mesh[link_name]['contact_candidates'] for link_name in self.mesh]
+        # self.global_index_to_link_index = sum([[i] * len(contact_candidates) for i, contact_candidates in enumerate(self.contact_candidates)], [])
+        # self.contact_candidates = torch.cat(self.contact_candidates, dim=0)
+        # self.global_index_to_link_index = torch.tensor(self.global_index_to_link_index, dtype=torch.long, device=device)
+        # self.n_contact_candidates = self.contact_candidates.shape[0]
 
         # self.penetration_keypoints = [self.mesh[link_name]['penetration_keypoints'] for link_name in self.mesh]
         # self.global_index_to_link_index_penetration = sum([[i] * len(penetration_keypoints) for i, penetration_keypoints in enumerate(self.penetration_keypoints)], [])
@@ -475,6 +504,25 @@ class HandModelMJCF:
 
         Use analytical method and our modified Kaolin package
 
+        hithand links:
+
+        root
+        Right_Thumb_Phaprox_child
+        Right_Thumb_Phamed_child
+        Right_Thumb_Phadist_child
+        Right_Index_Phaprox_child
+        Right_Index_Phamed_child
+        Right_Index_Phadist_child
+        Right_Middle_Phaprox_child
+        Right_Middle_Phamed_child
+        Right_Middle_Phadist_child
+        Right_Ring_Phaprox_child
+        Right_Ring_Phamed_child
+        Right_Ring_Phadist_child
+        Right_Little_Phaprox_child
+        Right_Little_Phamed_child
+        Right_Little_Phadist_child
+
         Parameters
         ----------
         x: (B, N, 3) torch.Tensor
@@ -488,56 +536,74 @@ class HandModelMJCF:
         # We use analytical method to calculate Capsule sdf, and use our modified Kaolin package for other meshes
         # This practice speeds up the reverse penetration calculation
         # Note that we use a chamfer box instead of a primitive box to get more accurate signs
-        # dis = []
-        # x = (x - self.global_translation.unsqueeze(1)) @ self.global_rotation
-        # for link_name in self.mesh:
-        #     if link_name in ['robot0:forearm', 'robot0:wrist_child', 'robot0:ffknuckle_child', 'robot0:mfknuckle_child', 'robot0:rfknuckle_child', 'robot0:lfknuckle_child', 'robot0:thbase_child', 'robot0:thhub_child']:
-        #         continue
-        #     matrix = self.current_status[link_name].get_matrix()
-        #     x_local = (x - matrix[:, :3, 3].unsqueeze(1)) @ matrix[:, :3, :3]
-        #     x_local = x_local.reshape(-1, 3)  # (total_batch_size * num_samples, 3)
-        #     if 'geom_param' not in self.mesh[link_name]:
-        #         face_verts = self.mesh[link_name]['face_verts']
-        #         dis_local, dis_signs, _, _ = compute_sdf(x_local, face_verts)
-        #         dis_local = torch.sqrt(dis_local + 1e-8)
-        #         dis_local = dis_local * (-dis_signs)
-        #     else:
-        #         height = self.mesh[link_name]['geom_param'][1] * 2
-        #         radius = self.mesh[link_name]['geom_param'][0]
-        #         nearest_point = x_local.detach().clone()
-        #         nearest_point[:, :2] = 0
-        #         nearest_point[:, 2] = torch.clamp(nearest_point[:, 2], 0, height)
-        #         dis_local = radius - (x_local - nearest_point).norm(dim=1)
-        #     dis.append(dis_local.reshape(x.shape[0], x.shape[1]))
-        # dis = torch.max(torch.stack(dis, dim=0), dim=0)[0]
-        # return dis
-        raise NotImplementedError
+        dis = []
+        x = (x - self.global_translation.unsqueeze(1)) @ self.global_rotation
+        for link_name in self.mesh:
+            # if link_name in ['robot0:forearm', 'robot0:wrist_child', 'robot0:ffknuckle_child', 'robot0:mfknuckle_child', 'robot0:rfknuckle_child', 'robot0:lfknuckle_child', 'robot0:thbase_child', 'robot0:thhub_child']:
+            if link_name in ['Right_Thumb_Phaprox_child',
+                             'Right_Thumb_Phamed_child',
+                             'Right_Index_Phaprox_child',
+                             'Right_Middle_Phamed_child',
+                             'Right_Middle_Phaprox_child',
+                             'Right_Index_Phamed_child',
+                             'Right_Ring_Phaprox_child',
+                             'Right_Ring_Phamed_child',
+                             'Right_Little_Phaprox_child',
+                             'Right_Little_Phamed_child',
+                             ]:
+                continue
+            matrix = self.current_status[link_name].get_matrix()
+            x_local = (x - matrix[:, :3, 3].unsqueeze(1)) @ matrix[:, :3, :3]
+            x_local = x_local.reshape(-1, 3)  # (total_batch_size * num_samples, 3)
 
-    # def self_penetration(self):
-    #     """
-    #     Calculate self penetration energy
+            face_verts = self.mesh[link_name]['face_verts']
+            dis_local, dis_signs, _, _ = compute_sdf(x_local, face_verts)
+            dis_local = torch.sqrt(dis_local + 1e-8)
+            dis_local = dis_local * (-dis_signs)
 
-    #     Returns
-    #     -------
-    #     E_spen: (N,) torch.Tensor
-    #         self penetration energy
-    #     """
-    #     batch_size = self.global_translation.shape[0]
-    #     points = self.penetration_keypoints.clone().repeat(batch_size, 1, 1)
-    #     link_indices = self.global_index_to_link_index_penetration.clone().repeat(batch_size,1)
-    #     transforms = torch.zeros(batch_size, self.n_keypoints, 4, 4, dtype=torch.float, device=self.device)
-    #     for link_name in self.mesh:
-    #         mask = link_indices == self.link_name_to_link_index[link_name]
-    #         cur = self.current_status[link_name].get_matrix().unsqueeze(1).expand(batch_size, self.n_keypoints, 4, 4)
-    #         transforms[mask] = cur[mask]
-    #     points = torch.cat([points, torch.ones(batch_size, self.n_keypoints, 1, dtype=torch.float, device=self.device)], dim=2)
-    #     points = (transforms @ points.unsqueeze(3))[:, :, :3, 0]
-    #     points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
-    #     dis = (points.unsqueeze(1) - points.unsqueeze(2) + 1e-13).square().sum(3).sqrt()
-    #     dis = torch.where(dis < 1e-6, 1e6 * torch.ones_like(dis), dis)
-    #     dis = 0.02 - dis
-    #     E_spen = torch.where(dis > 0, dis, torch.zeros_like(dis))
-    #     return E_spen.sum((1,2))
+            # if 'geom_param' not in self.mesh[link_name]:
+                # face_verts = self.mesh[link_name]['face_verts']
+
+                # dis_local, dis_signs, _, _ = compute_sdf(x_local, face_verts)
+                # dis_local = torch.sqrt(dis_local + 1e-8)
+                # dis_local = dis_local * (-dis_signs)
+            # all links in hithand doesn't have valid geom_params
+            # else:
+            #     height = self.mesh[link_name]['geom_param'][1] * 2
+            #     radius = self.mesh[link_name]['geom_param'][0]
+            #     nearest_point = x_local.detach().clone()
+            #     nearest_point[:, :2] = 0
+            #     nearest_point[:, 2] = torch.clamp(nearest_point[:, 2], 0, height)
+            #     dis_local = radius - (x_local - nearest_point).norm(dim=1)
+            dis.append(dis_local.reshape(x.shape[0], x.shape[1]))
+        dis = torch.max(torch.stack(dis, dim=0), dim=0)[0]
+        return dis
+
+    def self_penetration(self):
+        """
+        Calculate self penetration energy
+
+        Returns
+        -------
+        E_spen: (N,) torch.Tensor
+            self penetration energy
+        """
+        batch_size = self.global_translation.shape[0]
+        points = self.penetration_keypoints.clone().repeat(batch_size, 1, 1)
+        link_indices = self.global_index_to_link_index_penetration.clone().repeat(batch_size,1)
+        transforms = torch.zeros(batch_size, self.n_keypoints, 4, 4, dtype=torch.float, device=self.device)
+        for link_name in self.mesh:
+            mask = link_indices == self.link_name_to_link_index[link_name]
+            cur = self.current_status[link_name].get_matrix().unsqueeze(1).expand(batch_size, self.n_keypoints, 4, 4)
+            transforms[mask] = cur[mask]
+        points = torch.cat([points, torch.ones(batch_size, self.n_keypoints, 1, dtype=torch.float, device=self.device)], dim=2)
+        points = (transforms @ points.unsqueeze(3))[:, :, :3, 0]
+        points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
+        dis = (points.unsqueeze(1) - points.unsqueeze(2) + 1e-13).square().sum(3).sqrt()
+        dis = torch.where(dis < 1e-6, 1e6 * torch.ones_like(dis), dis)
+        dis = 0.02 - dis
+        E_spen = torch.where(dis > 0, dis, torch.zeros_like(dis))
+        return E_spen.sum((1,2))
 
     def get_E_joints(self):
         """
@@ -552,25 +618,25 @@ class HandModelMJCF:
         torch.sum((self.hand_pose[:, 9:] < self.joints_lower) * (self.joints_lower - self.hand_pose[:, 9:]), dim=-1)
         return E_joints
 
-    # def get_penetration_keypoints(self):
-    #     """
-    #     Get penetration keypoints
+    def get_penetration_keypoints(self):
+        """
+        Get penetration keypoints
 
-    #     Returns
-    #     -------
-    #     points: (N, `n_keypoints`, 3) torch.Tensor
-    #         penetration keypoints
-    #     """
-    #     points = []
-    #     batch_size = self.global_translation.shape[0]
-    #     for link_name in self.mesh:
-    #         n_surface_points = self.mesh[link_name]['penetration_keypoints'].shape[0]
-    #         points.append(self.current_status[link_name].transform_points(self.mesh[link_name]['penetration_keypoints']))
-    #         if 1 < batch_size != points[-1].shape[0]:
-    #             points[-1] = points[-1].expand(batch_size, n_surface_points, 3)
-    #     points = torch.cat(points, dim=-2).to(self.device)
-    #     points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
-    #     return points
+        Returns
+        -------
+        points: (N, `n_keypoints`, 3) torch.Tensor
+            penetration keypoints
+        """
+        points = []
+        batch_size = self.global_translation.shape[0]
+        for link_name in self.mesh:
+            n_surface_points = self.mesh[link_name]['penetration_keypoints'].shape[0]
+            points.append(self.current_status[link_name].transform_points(self.mesh[link_name]['penetration_keypoints']))
+            if 1 < batch_size != points[-1].shape[0]:
+                points[-1] = points[-1].expand(batch_size, n_surface_points, 3)
+        points = torch.cat(points, dim=-2).to(self.device)
+        points = points @ self.global_rotation.transpose(1, 2) + self.global_translation.unsqueeze(1)
+        return points
 
 
 if __name__ == '__main__':

@@ -176,15 +176,13 @@ python vis_features.py --mode 3D_similarity --ref_idx 496 --similarity l2
 
 # Adapt Biglab Setup
 
-## todos
+## Replication TODOs
 
-[x] 1. './camera/workspace/calibration.json'
-[x] 2. import 4 images/depth
-[x] 2.1 fix bug in pcd transform
-[] 3. do we need to retrain the alignment network?
-[x] 4. convert hithand urdf to mjcf from
-   https://docs.kscale.dev/utils/urdf2mjcf
-[] 5. import collected grasp pose
+[] Wrong visualization of demon grasp
+[] replace hangmodel from shadow hand with hithand
+   [] understand shadow hand links
+   [] modify it same way with hithand (peneration points...)
+   [] visualize and verify
 
 transforms.json from demo collection has different intrinsics
 

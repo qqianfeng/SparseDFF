@@ -211,7 +211,7 @@ class Hand_AlignmentCheck:
                  color_ref1:np.ndarray=None, color_ref2:np.ndarray=None,
                  points_vis1:np.ndarray=None, points_vis2:np.ndarray=None,
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
-                 points_ref:torch.Tensor=None, skip_inverse:bool = False,
+                 points_pruned_all:torch.Tensor=None, skip_inverse:bool = False,
                  opt_iterations=1500, opt_nums=500,
                  trimesh_viz=False, hand_file = "./mjcf/hithand_mojuco.xml",
                  tip_aug=None, name=None):
@@ -229,7 +229,7 @@ class Hand_AlignmentCheck:
         self.points_vis2 = points_vis2
         self.color_vis1 = colors_vis1
         self.color_vis2 = colors_vis2
-        self.points_ref:torch.Tensor = points_ref
+        self.points_pruned_all:torch.Tensor = points_pruned_all
         self.pcd1 = pcd1
         self.pcd2 = pcd2
         self.color_ref1, self.color_ref2 = color_ref1, color_ref2
@@ -403,14 +403,20 @@ class Hand_AlignmentCheck:
                 losses = [self.loss_fn(act_hat[ii].view(t_size), reference_act_hat) for ii in range(M)]
                 losses = torch.stack(losses)
 
+                # additional loss from DexGraspNet
+                # TODO: I add, test
+                # self.hand.get_penetration_keypoints()
 
-                # distances = self.hand.cal_distance(self.points_ref.expand(M, -1, -1))
-                # distances[distances <= 0] = 0
-                # E_pen = distances.sum(-1)
+                distances = self.hand.cal_distance(self.points_pruned_all.expand(M, -1, -1))
+                distances[distances <= 0] = 0
+                E_pen = distances.sum(-1)
+                # TODO: fix self penetration
                 # E_spen = self.hand.self_penetration()
-                # E_joint = self.hand.get_E_joints()
+                E_joint = self.hand.get_E_joints()
                 # losses += E_pen * 1e-1 + E_spen * 1e-2 + E_joint * 1e-2
+                losses += E_pen * 1e-1 + E_joint * 1e-2
 
+                # loss if new pose deviates too much from original pose
                 rot_ms = robust_compute_rotation_matrix_from_ortho6d(motion[:, 3:9])
                 rot_ms = rot_ms.reshape((M, 3, 3)).to(torch.float32)
 
@@ -509,7 +515,7 @@ class Gripper_AlignmentCheck:
                  color_ref1:np.ndarray=None, color_ref2:np.ndarray=None,
                  points_vis1:np.ndarray=None, points_vis2:np.ndarray=None,
                  colors_vis1:np.ndarray=None, colors_vis2:np.ndarray=None,
-                 points_ref:torch.Tensor=None, skip_inverse:bool = False,
+                 points_pruned_all:torch.Tensor=None, skip_inverse:bool = False,
                  opt_iterations=1500, opt_nums=500,
                  trimesh_viz=False, hand_file = "mjcf/shadow_hand_wrist_free.xml",
                  tip_aug=None, name=None):
@@ -526,7 +532,7 @@ class Gripper_AlignmentCheck:
         self.points_vis2 = points_vis2
         self.color_vis1 = colors_vis1
         self.color_vis2 = colors_vis2
-        self.points_ref:torch.Tensor = points_ref
+        self.points_pruned_all:torch.Tensor = points_pruned_all
         ### let the pcd be center on the origin
         self.pcd1 = pcd1
         self.pcd2 = pcd2
