@@ -15,6 +15,27 @@ import numpy as np
 # from torchsdf import index_vertices_by_faces, compute_sdf
 from scipy.spatial.transform import Rotation
 
+
+def rotation_matrix_to_ortho6d_np(R):
+    """
+    Convert a 3x3 rotation matrix to a 6D ortho representation using NumPy.
+
+    Parameters
+    ----------
+    R : np.ndarray
+        A NumPy array of shape (3, 3) representing a rotation matrix.
+
+    Returns
+    -------
+    ortho6d : np.ndarray
+        A 6D vector (1D array of shape (6,)) that can reconstruct R
+        via the usual ortho6d -> rotation matrix procedure.
+    """
+    assert R.shape == (3, 3), "Input must be a 3x3 matrix."
+    # Simply take the first two columns and flatten them
+    return np.concatenate([R[:, 0], R[:, 1]], axis=0)
+
+
 def quaternion_to_ortho6d(quaternion):
     """
     Converts a quaternion to an Ortho6D representation.
@@ -43,6 +64,9 @@ def robust_compute_rotation_matrix_from_ortho6d(poses):
     create a base that takes into account the two predicted
     directions equally
     """
+    if isinstance(poses, np.ndarray):
+        poses = torch.from_numpy(poses)
+
     ### COOL!!! we can freely update the pose without worrying about the orthogonality
     x_raw = poses[:, 0:3]  # batch*3
     y_raw = poses[:, 3:6]  # batch*3

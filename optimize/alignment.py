@@ -14,7 +14,7 @@ from optimize.gripper_model import GripperModel
 from scipy.spatial.transform import Rotation
 import yaml
 from matplotlib import cm
-from optimize.hand_model import robust_compute_rotation_matrix_from_ortho6d, quaternion_to_ortho6d
+from optimize.hand_model import robust_compute_rotation_matrix_from_ortho6d, quaternion_to_ortho6d, rotation_matrix_to_ortho6d_np
 
 def read_tranformation(data_path:str='./camera/transform.yaml'):
     with open(data_path, 'r') as f:
@@ -172,6 +172,8 @@ def open3d_show(np_pcd_list, mesh_list, color_add_list=None, color_list=None, ra
 
     tpcd_list = []
     for i, np_pcd in enumerate(np_pcd_list):
+        if not isinstance(np_pcd,np.ndarray):
+            np_pcd = np.array(np_pcd)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(np_pcd)
         np_colors = np.tile([0,0,100], (np_pcd.shape[0], 1))
@@ -280,8 +282,15 @@ class Hand_AlignmentCheck:
                     arm_pose_trasl = demo_pose['translation']
 
                     # directly convert quat to matrix
-                    # arm_pose_rot = quaternion_to_ortho6d(demo_pose['quat_xyzw']).tolist()
-                    arm_pose_rot = transforms3d.quaternions.quat2mat(demo_pose['quat_xyzw']).flatten().tolist()
+                    if self.conf['rotation'] == 'ortho6d':
+                        arm_pose_rot = quaternion_to_ortho6d(demo_pose['quat_xyzw']).reshape(-1,6)
+                        arm_pose_rot = robust_compute_rotation_matrix_from_ortho6d(arm_pose_rot)
+                        arm_pose_rot = arm_pose_rot.cpu().numpy().flatten().tolist()
+
+                    elif self.conf['rotation'] == 'rotation_matrix':
+                        arm_pose_rot = transforms3d.quaternions.quat2mat(demo_pose['quat_xyzw']).flatten().tolist()
+                    else:
+                        raise ValueError(f'unknown rotation representation {self.conf["rotation"]}')
 
                     # TODO: do we need to revert flange2grasp
                     arm_pose_rot = np.array(arm_pose_rot).reshape(3,3)
@@ -293,7 +302,11 @@ class Hand_AlignmentCheck:
                     arm_pose_trasl = grasp_mat[:3,-1].flatten().tolist()
 
                     join_stats = [item for sublist in demo_pose['joint_state'] for item in sublist]
-                    torque_states = [item for sublist in demo_pose['torque_state'] for item in sublist]
+                    torque_states = [item for sublist in demo_pose['torque_state'] for item in sublist]\
+
+                    if self.conf['rotation'] == 'ortho6d':
+                        arm_pose_rot = rotation_matrix_to_ortho6d_np(np.array(arm_pose_rot).reshape(3,3))
+                        arm_pose_rot = arm_pose_rot.flatten().tolist()
                     grasp_tmp['demo_pose'] = arm_pose_trasl + arm_pose_rot + join_stats
                     grasp_tmp['torque_states'] = torque_states
                     self.hand_gt_poses.append(grasp_tmp)
@@ -318,7 +331,13 @@ class Hand_AlignmentCheck:
             # TODO: visualized grasp is wrong
             grasp_pose = np.eye(4)
             transl = hand_gt_pose[:,:3].reshape(3,).cpu().numpy()
-            rot = hand_gt_pose[:,3:12].reshape(3,3).cpu().numpy()
+            if self.conf['rotation'] == 'ortho6d':
+                rot = hand_gt_pose[:,3:9]
+                rot = robust_compute_rotation_matrix_from_ortho6d(rot)
+                rot = rot.cpu().numpy()
+            elif self.conf['rotation'] == 'rotation_matrix':
+                rot = hand_gt_pose[:,3:12].reshape(3,3).cpu().numpy()
+
             grasp_pose[:3,-1] = transl
             grasp_pose[:3,:3] = rot
             open3d_show([self.pcd1 ], [vquery_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1,],grasp_pose=grasp_pose)
@@ -336,8 +355,9 @@ class Hand_AlignmentCheck:
             best_loss = np.inf
             best_idx = 0
             M = 10
-
-            motion = (torch.rand(M, 31)*0.03).float().to(self.dev)
+            pose_dim = 29
+            # pose of 29 dim with transl (3), rot (6), joints (20)
+            motion = (torch.rand(M, pose_dim)*0.03).float().to(self.dev)
             motion[:, 2] = float(self.pcd2[:, 2].max()) + (torch.rand(M)*0.1 + 0.2)[None, :].float().to(self.dev)
             motion[:, 0:2] = (torch.rand(M, 2)*0.2).float().to(self.dev)
             motion[:, 3:9] = torch.from_numpy(np.array([0,-1,0,0,0,1])[None, :].repeat(M, axis=0)).to(self.dev)
@@ -476,9 +496,12 @@ class Hand_AlignmentCheck:
             X_mesh.export('./data/X_mesh.stl', file_type='stl')
 
             if self.color_ref1 is not None and self.color_ref2 is not None:
-                trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1, self.color_ref2])
+                # trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1, self.color_ref2])
+                open3d_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name, color_add_list=[self.color_ref1, self.color_ref2])
+
             else:
-                trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name)
+                # trimesh_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name)
+                open3d_show([vpcd1, vquery1 , self.pcd2, best_X, pcd_traj_list[best_idx]], [vquery_mesh, X_mesh], show=self.viz, name=self.name)
 
 
 class Gripper_AlignmentCheck:

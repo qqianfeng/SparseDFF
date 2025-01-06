@@ -6,7 +6,8 @@ verbose: false
 # bad alignment
 # img_1734624999.0027404, img_1734700338.7743263 img_1734702063.6957574 img_1734707072.40529
 # img_1734710093.5263314 img_1734784913.2326946
-extrinsics_path: example_data/demos/img_1734784913.2326946/transforms_base2flange.json
+# extrinsics_path: example_data/demos/img_1734784913.2326946/transforms_base2flange.json
+extrinsics_path: example_data/demos/img_1734784913.2326946/transforms_gt_ocv.json
 data1: example_data/demos/img_1734784913.2326946 # reference
 data2: ./example_data/test/img_1732808982.6092992 # test
 hand_ref_pose_name: monkey # the ref pose is ./camera/hand_arm/ref_pose_{}.npy
@@ -24,3 +25,4 @@ hand_model:
   pt_nums: 500
 alignment:
   opt_iterations: 300
+rotation: ortho6d  #rotation_matrix #ortho6d
